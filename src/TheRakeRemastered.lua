@@ -1,3 +1,9 @@
+-- Unauthorized sale, redistribution, or removal of attribution from this script
+-- constitutes a violation of the applicable license and may result in legal action,
+-- including but not limited to DMCA takedown requests. Review the license terms
+-- prior to any form of redistribution.
+-- READ THE GOD DAMN LICENSE
+
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
