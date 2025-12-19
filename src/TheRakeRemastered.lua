@@ -1258,6 +1258,10 @@ local function createESPGui()
 	tabIndicator.BackgroundColor3 = Color3.fromRGB(150,8,8)
 	tabIndicator.Parent = topBar
 
+	local tabIndicatorCorner = Instance.new("UICorner")
+	tabIndicatorCorner.CornerRadius = UDim.new(0, 4)
+	tabIndicatorCorner.Parent = tabIndicator
+
 	-- bring tabs above indicator
 	homeBtn.ZIndex = 2
 	visualsBtn.ZIndex = 2
@@ -1592,48 +1596,81 @@ local function createESPGui()
 	-- Toggle helper
 	local function makeToggle(parent, title, initial, onChange)
 		local frame = Instance.new("Frame")
-		frame.Size = UDim2.new(1, -16, 0, 36)
+		frame.Size = UDim2.new(1, -16, 0, 40)
 		frame.Position = UDim2.new(0, 8, 0, 0)
 		frame.BackgroundTransparency = 1
 		frame.Parent = parent
 
 		local label = Instance.new("TextLabel")
-		label.Size = UDim2.new(0.7, 0, 1, 0)
+		label.Size = UDim2.new(0.66, 0, 1, 0)
 		label.BackgroundTransparency = 1
 		label.Text = title
 		label.Font = Enum.Font.GothamBold
 		label.TextSize = 16
-		label.TextColor3 = Color3.fromRGB(255, 255, 255)
+		label.TextColor3 = Color3.fromRGB(245, 245, 245)
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.Parent = frame
 
+		local btnBg = Instance.new("Frame")
+		btnBg.Size = UDim2.new(0.28, 0, 0.7, 0)
+		btnBg.Position = UDim2.new(0.72, 0, 0.15, 0)
+		btnBg.BackgroundColor3 = initial and Color3.fromRGB(140,160,180) or Color3.fromRGB(60,60,66)
+		btnBg.BackgroundTransparency = 0.12
+		local btnCorner = Instance.new("UICorner") btnCorner.Parent = btnBg
+		btnBg.Parent = frame
+
 		local btn = Instance.new("TextButton")
-		btn.Size = UDim2.new(0.28, 0, 0.8, 0)
-		btn.Position = UDim2.new(0.72, 0, 0.1, 0)
+		btn.Size = UDim2.new(1, -8, 1, -6)
+		btn.Position = UDim2.new(0, 4, 0, 3)
+		btn.BackgroundTransparency = 1
 		btn.Font = Enum.Font.GothamBold
 		btn.TextSize = 14
 		btn.TextStrokeTransparency = 0
-		btn.Parent = frame
+		btn.AutoButtonColor = false
+		btn.Parent = btnBg
 
-		-- outline for toggle
 		local stroke = Instance.new("UIStroke")
 		stroke.Thickness = 1
-		stroke.Parent = btn
+		stroke.Parent = btnBg
+
+		local okT, _ = pcall(function() return TweenService end)
+		local hoverTween
+		btnBg.MouseEnter:Connect(function()
+			pcall(function()
+				if okT and TweenService then
+					if hoverTween then hoverTween:Cancel() end
+					hoverTween = TweenService:Create(btnBg, TweenInfo.new(0.12), {BackgroundTransparency = 0.05})
+					hoverTween:Play()
+				else
+					btnBg.BackgroundTransparency = 0.05
+				end
+			end)
+		end)
+		btnBg.MouseLeave:Connect(function()
+			pcall(function()
+				if okT and TweenService then
+					if hoverTween then hoverTween:Cancel() end
+					hoverTween = TweenService:Create(btnBg, TweenInfo.new(0.12), {BackgroundTransparency = 0.12})
+					hoverTween:Play()
+				else
+					btnBg.BackgroundTransparency = 0.12
+				end
+			end)
+		end)
 
 		local function applyToggleVisual(state)
 			btn.Text = state and "ON" or "OFF"
 			if state then
-				btn.TextColor3 = Color3.fromRGB(255,255,255) -- active: white
-				stroke.Color = Color3.fromRGB(255,255,255)
+				btn.TextColor3 = Color3.fromRGB(255,255,255)
+				stroke.Color = Color3.fromRGB(100,120,140)
+				btnBg.BackgroundColor3 = Color3.fromRGB(140,160,180)
 			else
-				btn.TextColor3 = Color3.fromRGB(150,8,8) -- not active: red
-				stroke.Color = Color3.fromRGB(150,8,8)
+				btn.TextColor3 = Color3.fromRGB(220,220,220)
+				stroke.Color = Color3.fromRGB(60,60,66)
+				btnBg.BackgroundColor3 = Color3.fromRGB(60,60,66)
 			end
 		end
 
-		-- default visuals (white outline/text)
-		stroke.Color = Color3.fromRGB(255,255,255)
-		btn.TextColor3 = Color3.fromRGB(255,255,255)
 		applyToggleVisual(initial)
 
 		btn.MouseButton1Click:Connect(function()
@@ -1953,57 +1990,9 @@ local function createESPGui()
 	locToggle.Position = UDim2.new(0, 8, 0, yOffset)
 	yOffset = yOffset + 44
 
-	-- Rake Meter toggle
-	local rakeMeterToggle = makeToggle(leftCol, "Rake Meter", RAKE_METER.enabled, function(v)
-		RAKE_METER.enabled = v
-		if v then
-			pcall(function() enableRakeMeter(screen) end)
-		else
-			pcall(function() disableRakeMeter() end)
-		end
-		saveSettings()
-	end)
-	rakeMeterToggle.Position = UDim2.new(0, 8, 0, yOffset)
-	yOffset = yOffset + 44
-
-	-- Beam visibility toggle (separate from enabling the meter)
-	local beamToggle = makeToggle(leftCol, "Use Beam", RAKE_METER.useBeam, function(v)
-		RAKE_METER.useBeam = v
-		if RAKE_METER.beam then
-			RAKE_METER.beam.Enabled = v
-		end
-		saveSettings()
-	end)
-	beamToggle.Position = UDim2.new(0, 8, 0, yOffset)
-	yOffset = yOffset + 44
-
-	-- Improved Lighting toggle
-	local improvedToggle = makeToggle(leftCol, "Improved Lighting", IMPROVED_LIGHTING_ENABLED, function(v)
-		IMPROVED_LIGHTING_ENABLED = v
-		if v then
-			pcall(function() enableImprovedLighting() end)
-		else
-			pcall(function() disableImprovedLighting() end)
-		end
-		saveSettings()
-	end)
-	improvedToggle.Position = UDim2.new(0, 8, 0, yOffset)
-	yOffset = yOffset + 44
 
 
-	yOffset = yOffset + 64
-
-	-- if settings requested rake meter enabled, start it now
-	if RAKE_METER.enabled then
-		pcall(function() enableRakeMeter(screen) end)
-	end
-
-	-- if settings requested improved lighting, enable it now
-	if IMPROVED_LIGHTING_ENABLED then
-		pcall(function() enableImprovedLighting() end)
-	end
-
-	-- Dropdown to choose which locations to show
+	-- Dropdown to choose which locations to show (placed after Improved Lighting)
 	local chooseBtn = Instance.new("TextButton")
 	chooseBtn.Size = UDim2.new(1, -16, 0, 28)
 	chooseBtn.Position = UDim2.new(0, 8, 0, yOffset)
@@ -2025,6 +2014,20 @@ local function createESPGui()
 	chooseList.ZIndex = 199
 	chooseList.Parent = leftCol
 
+	yOffset = yOffset + 12
+
+	-- if settings requested rake meter enabled, start it now
+	if RAKE_METER.enabled then
+		pcall(function() enableRakeMeter(screen) end)
+	end
+
+	-- if settings requested improved lighting, enable it now
+	if IMPROVED_LIGHTING_ENABLED then
+		pcall(function() enableImprovedLighting() end)
+	end
+
+
+
 	local locToggles = {}
 	for i, loc in ipairs(LOCATIONS) do
 		local initial = LOCATION_SETTINGS[loc.name] ~= false
@@ -2044,10 +2047,79 @@ local function createESPGui()
 		isDragable = not newVis
 	end)
 
+	-- Splitting horizontal line and label for lighting-related controls (placed below chooseList)
+	local baseY = yOffset + 22
+
+	local lightningDivider = Instance.new("Frame")
+	lightningDivider.Name = "LightningDivider"
+	lightningDivider.Size = UDim2.new(1, -16, 0, 2)
+	lightningDivider.Position = UDim2.new(0, 8, 0, baseY)
+	lightningDivider.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+	lightningDivider.BackgroundTransparency = 0.35
+	lightningDivider.ZIndex = 201
+	lightningDivider.Parent = leftCol
+
+	-- Section label for lighting controls
+	local lightningLabel = Instance.new("TextLabel")
+	lightningLabel.Name = "LightningLabel"
+	lightningLabel.Size = UDim2.new(1, -16, 0, 22)
+	lightningLabel.Position = UDim2.new(0, 8, 0, baseY + 12)
+	lightningLabel.BackgroundTransparency = 1
+	lightningLabel.Font = Enum.Font.GothamBold
+	lightningLabel.TextSize = 16
+	lightningLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	lightningLabel.Text = "Lighting Related"
+	lightningLabel.TextXAlignment = Enum.TextXAlignment.Left
+	lightningLabel.ZIndex = 202
+	lightningLabel.Parent = leftCol
+
+	-- Improved Lighting toggle (placed just under the label)
+	local improvedToggle = makeToggle(leftCol, "Improved Lighting", IMPROVED_LIGHTING_ENABLED, function(v)
+		IMPROVED_LIGHTING_ENABLED = v
+		if v then
+			pcall(function() enableImprovedLighting() end)
+		else
+			pcall(function() disableImprovedLighting() end)
+		end
+		saveSettings()
+	end)
+	improvedToggle.Position = UDim2.new(0, 8, 0, baseY + 36)
+	yOffset = baseY + 36 + 44
+
+
+
 	-- start markers if enabled
 	if showLocations then
 		pcall(function() enableLocationMarkers(screen) end)
 	end
+
+	-- Rake controls group (moved out of left column so it's grouped with other visuals)
+	local rakeGroup = Instance.new("Frame")
+	rakeGroup.Name = "RakeGroup"
+	rakeGroup.Size = UDim2.new(1, -16, 0, 96)
+	rakeGroup.Position = UDim2.new(0, 8, 0, 140)
+	rakeGroup.BackgroundTransparency = 1
+	rakeGroup.Parent = rightCol
+
+	local rakeMeterToggle = makeToggle(rakeGroup, "Rake Meter", RAKE_METER.enabled, function(v)
+		RAKE_METER.enabled = v
+		if v then
+			pcall(function() enableRakeMeter(screen) end)
+		else
+			pcall(function() disableRakeMeter() end)
+		end
+		saveSettings()
+	end)
+	rakeMeterToggle.Position = UDim2.new(0, 8, 0, 8)
+
+	local beamToggle = makeToggle(rakeGroup, "Use Beam", RAKE_METER.useBeam, function(v)
+		RAKE_METER.useBeam = v
+		if RAKE_METER.beam then
+			RAKE_METER.beam.Enabled = v
+		end
+		saveSettings()
+	end)
+	beamToggle.Position = UDim2.new(0, 8, 0, 52)
 
 	-- Active section handling: move button up and change text color
 	local homeDefaultPos = homeBtn.Position
