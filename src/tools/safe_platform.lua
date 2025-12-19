@@ -1,8 +1,3 @@
--- safe_platform.lua
--- Press `P` to spawn a temporary safe platform above your head
--- Spawns an anchored platform and teleports the player on top of it
--- Usage: run as a LocalScript (StarterPlayerScripts) or execute locally
-
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
@@ -92,3 +87,4 @@ end)
 -- no cleanup needed on character removal for persistent platforms
 
 print("safe_platform loaded — Press P to spawn a temporary platform above your head.")
+
