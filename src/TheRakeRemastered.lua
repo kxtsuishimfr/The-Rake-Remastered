@@ -66,34 +66,18 @@ local RAKE_METER = {
 }
 
 local function findRakeModel()
-	-- 1) Prefer models already tagged by ESP
+	-- Prefer an exact match to a top-level instance named "Rake" (same as rake_meter.lua)
+	local direct = Workspace:FindFirstChild("Rake")
+	if direct and direct:IsA("Model") then
+		return direct
+	end
+
+	-- Fallback: prefer models explicitly tagged by ESP as 'rake'
 	for _, m in ipairs(Workspace:GetDescendants()) do
 		if m and m:IsA("Model") then
 			local tag = m:FindFirstChild("ESP_Category")
 			if tag and tag:IsA("StringValue") and tag.Value == "rake" then
 				return m
-			end
-		end
-	end
-
-	-- 2) Fall back to model name containing 'rake'
-	for _, inst in ipairs(Workspace:GetDescendants()) do
-		if inst and inst:IsA("Model") then
-			local ok, iname = pcall(function() return tostring(inst.Name) end)
-			if ok and iname and iname:lower():find("rake") then
-				return inst
-			end
-		end
-	end
-
-	-- 3) As a last resort, find any model that has a descendant part/name containing 'rake'
-	for _, inst in ipairs(Workspace:GetDescendants()) do
-		if inst and inst:IsA("Model") then
-			for _, d in ipairs(inst:GetDescendants()) do
-				local ok, dname = pcall(function() return tostring(d.Name) end)
-				if ok and dname and dname:lower():find("rake") then
-					return inst
-				end
 			end
 		end
 	end
@@ -213,7 +197,10 @@ local function enableRakeMeter(screen)
 
 			local rake = getCachedRake(0.25) or findRakeModel()
 			if not rake then
-				if RAKE_METER.label then RAKE_METER.label.Text = "Rake Not Found" RAKE_METER.label.TextColor3 = Color3.fromRGB(128,128,128) end
+				if RAKE_METER.label then
+					RAKE_METER.label.Text = "Rake is not active"
+					RAKE_METER.label.TextColor3 = Color3.fromRGB(160,160,160)
+				end
 				return
 			end
 
@@ -2081,10 +2068,10 @@ local function createESPGui()
 		clusterAcc = 0,
 	}
 
-	-- Restore Object Finder enabled state from loaded settings, if present
+	-- Determine if Object Finder should start enabled (restore from settings)
+	local shouldEnableObjectFinder = false
 	if loadedSettings and loadedSettings.objectFinderEnabled then
-		OBJECT_FINDER.enabled = loadedSettings.objectFinderEnabled
-		-- Defer enabling until after OBJECT_FINDER functions defined; we'll enable below
+		shouldEnableObjectFinder = true
 	end
 
 	local TARGET_NAMES = {"scrap","flare gun","flare","supply drop","drop"}
@@ -2233,7 +2220,18 @@ local function createESPGui()
 		elseif string.find(lname, "flareguncue", 1, true) or string.find(lname, "flare_gun_cue", 1, true) then
 			category = "flare_cue"
 		elseif string.find(lname, "flaregun", 1, true) or string.find(lname, "flare gun", 1, true) or string.find(lname, "flare", 1, true) then
-			category = "flare"
+			-- Only accept explicit flare gun parts: "flare gun" or "flare gun cue"
+			local allowed = false
+			if string.find(lname, "flare gun cue", 1, true) or string.find(lname, "flare_gun_cue", 1, true) then
+				allowed = true
+			elseif string.find(lname, "flare gun", 1, true) or string.find(lname, "flaregun", 1, true) then
+				allowed = true
+			end
+			if allowed then
+				category = "flare"
+			else
+				category = nil
+			end
 		else
 			category = findBestMatch(nameToCheck)
 		end
@@ -2241,6 +2239,16 @@ local function createESPGui()
 		if not match then return end
 		local key = modelRoot or inst
 		if OBJECT_FINDER.tracked[key] then return end
+		-- Limit flare matches to at most two tracked items
+		if match == "flare" then
+			local flareCount = 0
+			for k,v in pairs(OBJECT_FINDER.tracked) do
+				if v and v.match == "flare" then flareCount = flareCount + 1 end
+			end
+			if flareCount >= 2 then
+				return
+			end
+		end
 		local adornPart = nil
 		if key:IsA("Model") then adornPart = key.PrimaryPart or key:FindFirstChild("HumanoidRootPart") or key:FindFirstChildWhichIsA("BasePart") else adornPart = key end
 		local highlight = Instance.new("Highlight")
@@ -2272,7 +2280,18 @@ local function createESPGui()
 		local nameTag = createNameTag(key, adornPart, nameTagColor)
 		if nameTag and nameTag:FindFirstChildWhichIsA("TextLabel") then
 			local lbl = nameTag:FindFirstChildWhichIsA("TextLabel")
-			if lbl then lbl.Text = (key.Name or "") end
+			if lbl then
+				if match == "flare" then
+					local kn = (key.Name or ""):lower()
+					if string.find(kn, "flare gun cue", 1, true) or string.find(kn, "flare_gun_cue", 1, true) then
+						lbl.Text = "Flare Gun Cue"
+					else
+						lbl.Text = "Flare Gun"
+					end
+				else
+					lbl.Text = (key.Name or "")
+				end
+			end
 		end
 		OBJECT_FINDER.tracked[key] = { highlight = highlight, nameTag = nameTag, match = match }
 		if match == "flare" then pcall(function() enforceFlareUniqueness() end) end
@@ -2359,12 +2378,63 @@ local function createESPGui()
 				end
 			end
 		end)
+		-- update cluster guis fading/scaling
+		local cam = workspace.CurrentCamera
+		local camPos = cam and cam.CFrame and cam.CFrame.Position
+		if camPos then
+			for id, c in pairs(OBJECT_FINDER.clusters) do
+				pcall(function()
+					if c and c.part and c.part.Position and c.gui and c.gui.Parent then
+						local dist = (c.part.Position - camPos).Magnitude
+						local fadeStart, fadeEnd = 60, 200
+						local alpha = math.clamp((dist - fadeStart) / (fadeEnd - fadeStart), 0, 1)
+						local lbl = c.gui:FindFirstChildWhichIsA("TextLabel")
+						if lbl then
+							lbl.TextTransparency = alpha
+							lbl.TextStrokeTransparency = math.clamp(alpha * 0.9, 0, 1)
+						end
+						local baseW, baseH = 160, 40
+						local w = math.floor(math.clamp(baseW * (1 - alpha * 0.8), 60, baseW))
+						local h = math.floor(math.clamp(baseH * (1 - alpha * 0.8), 14, baseH))
+						pcall(function() c.gui.Size = UDim2.new(0, w, 0, h) end)
+					end
+				end)
+			end
+		end
 		OBJECT_FINDER.connections.heartbeat = RunService.Heartbeat:Connect(function()
+			local cam = workspace.CurrentCamera
+			local camPos = cam and cam.CFrame and cam.CFrame.Position
 			for key, data in pairs(OBJECT_FINDER.tracked) do
 				if not key or not key.Parent then
 					if data.highlight and data.highlight.Parent then data.highlight:Destroy() end
 					if data.nameTag and data.nameTag.Parent then data.nameTag:Destroy() end
 					OBJECT_FINDER.tracked[key] = nil
+				else
+					pcall(function()
+						if data.nameTag and data.nameTag.Parent and camPos then
+							local posPart = nil
+							if key:IsA("Model") then
+								posPart = key.PrimaryPart or key:FindFirstChildWhichIsA("BasePart")
+							elseif key:IsA("BasePart") then
+								posPart = key
+							end
+							if posPart and posPart.Position then
+								local dist = (posPart.Position - camPos).Magnitude
+								local fadeStart, fadeEnd = 60, 200
+								local alpha = math.clamp((dist - fadeStart) / (fadeEnd - fadeStart), 0, 1)
+								local lbl = data.nameTag:FindFirstChildWhichIsA("TextLabel")
+								if lbl then
+									lbl.TextTransparency = alpha
+									lbl.TextStrokeTransparency = math.clamp(alpha * 0.9, 0, 1)
+								end
+								local bb = data.nameTag
+								local baseW, baseH = 100, 40
+								local w = math.floor(math.clamp(baseW * (1 - alpha * 0.8), 40, baseW))
+								local h = math.floor(math.clamp(baseH * (1 - alpha * 0.8), 14, baseH))
+								pcall(function() bb.Size = UDim2.new(0, w, 0, h) end)
+							end
+						end
+					end)
 				end
 			end
 		end)
@@ -2390,7 +2460,7 @@ local function createESPGui()
 	end
 
 	-- Add toggle to right column
-	local objFinderToggle = makeToggle(rakeGroup, "Object Finder (Beta)", OBJECT_FINDER.enabled, function(v)
+	local objFinderToggle = makeToggle(rakeGroup, "Object Finder (Beta)", shouldEnableObjectFinder, function(v)
 		if v then
 			enableObjectFinder()
 			if OBJECT_FINDER.isBeta then
@@ -2404,7 +2474,7 @@ local function createESPGui()
 	objFinderToggle.Position = UDim2.new(0, 8, 0, 92)
 
 	-- If loaded settings requested Object Finder enabled, enable it now
-	if OBJECT_FINDER.enabled then
+	if shouldEnableObjectFinder then
 		pcall(function() enableObjectFinder() end)
 	end
 
