@@ -1,7 +1,3 @@
--- Object Inspector (LocalScript)
--- Place this in StarterPlayer > StarterPlayerScripts or run as a LocalScript.
--- Press Insert to toggle inspection: prints full paths to Output and highlights objects.
-
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
@@ -122,3 +118,4 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 print("ObjectInspector loaded. Press Insert to scan and highlight Workspace objects.")
+
