@@ -387,6 +387,9 @@ for _, l in ipairs(LOCATIONS) do
 	LOCATION_SETTINGS[l.name] = true
 end
 
+-- Whether to draw a background behind location text labels (persisted)
+local LOCATION_TEXT_BG = true
+
 local function createLocationMarkerUI(screen, loc)
 	if not screen or not loc then return end
 	local container = Instance.new("Frame")
@@ -398,26 +401,52 @@ local function createLocationMarkerUI(screen, loc)
 
 	local label = Instance.new("TextLabel")
 	label.Name = "Label"
-	label.Size = UDim2.new(1, 0, 0, 24)
+	label.Size = UDim2.new(1, 0, 0, 20)
 	label.Position = UDim2.new(0, 0, 0, 0)
-	label.BackgroundTransparency = 0.4
-	label.BackgroundColor3 = Color3.fromRGB(30,30,30)
-	label.TextColor3 = Color3.fromRGB(255,255,255)
-	label.Font = Enum.Font.GothamBold
+	label.BackgroundTransparency = (LOCATION_TEXT_BG and 0) or 1
+	label.BackgroundColor3 = Color3.fromRGB(18,18,20)
+	label.TextColor3 = Color3.fromRGB(230,230,235)
+	label.Font = Enum.Font.GothamSemibold
 	label.Text = loc.name
-	label.TextSize = 14
+	label.TextSize = 13
 	label.TextWrapped = true
+	label.TextXAlignment = Enum.TextXAlignment.Center
 	label.Parent = container
+
+	if LOCATION_TEXT_BG then
+		local lblCorner = Instance.new("UICorner")
+		lblCorner.CornerRadius = UDim.new(0,6)
+		lblCorner.Parent = label
+
+		local lblStroke = Instance.new("UIStroke")
+		lblStroke.Color = Color3.fromRGB(40,40,44)
+		lblStroke.Transparency = 0.6
+		lblStroke.Thickness = 1
+		lblStroke.Parent = label
+	end
 
 	local shape = Instance.new("Frame")
 	shape.Name = "Dot"
-	shape.Size = UDim2.new(0, 12, 0, 12)
-	shape.Position = UDim2.new(0.5, -6, 0, 30)
+	shape.Size = UDim2.new(0, 10, 0, 10)
+	shape.Position = UDim2.new(0.5, -5, 0, 26)
 	shape.AnchorPoint = Vector2.new(0.5, 0)
-	shape.BackgroundColor3 = Color3.fromRGB(80, 255, 120)
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(1, 0)
-	corner.Parent = shape
+	shape.BackgroundColor3 = Color3.fromRGB(120, 220, 170)
+	shape.BackgroundTransparency = 0
+	local sCorner = Instance.new("UICorner")
+	sCorner.CornerRadius = UDim.new(1, 0)
+	sCorner.Parent = shape
+	local sStroke = Instance.new("UIStroke")
+	sStroke.Color = Color3.fromRGB(30,30,30)
+	sStroke.Transparency = 0.7
+	sStroke.Thickness = 1
+	sStroke.Parent = shape
+	local g = Instance.new("UIGradient")
+	g.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(150,255,200)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(90,200,140)),
+	})
+	g.Rotation = 0
+	g.Parent = shape
 	shape.Parent = container
 
 	return { container = container, label = label, shape = shape }
@@ -471,17 +500,17 @@ local function enableLocationMarkers(screen)
 		if not entry.worldPart then
 			local part = Instance.new("Part")
 			part.Name = ("LocPart_%s"):format(loc.name:gsub("%s+",""))
-			part.Size = Vector3.new(0.6, 0.6, 0.6)
+			part.Size = Vector3.new(0.4,0.4,0.4)
 			part.Position = loc.pos
 			part.Anchored = true
 			part.CanCollide = false
-			part.Transparency = 0
-			part.Material = Enum.Material.Neon
-			part.Color = Color3.fromRGB(80, 255, 120)
+			part.Transparency = 0.45
+			part.Material = Enum.Material.SmoothPlastic
+			part.Color = Color3.fromRGB(110,200,160)
 			part.Parent = Workspace
 
 			local bp = Instance.new("BillboardGui")
-			bp.Size = UDim2.new(0, 120, 0, 28)
+			bp.Size = UDim2.new(0, 140, 0, 26)
 			bp.Adornee = part
 			bp.AlwaysOnTop = true
 			bp.StudsOffset = Vector3.new(0, 1.2, 0)
@@ -489,13 +518,27 @@ local function enableLocationMarkers(screen)
 
 			local lbl = Instance.new("TextLabel")
 			lbl.Size = UDim2.new(1, 0, 1, 0)
-			lbl.BackgroundTransparency = 0.4
-			lbl.BackgroundColor3 = Color3.fromRGB(30,30,30)
-			lbl.TextColor3 = Color3.fromRGB(255,255,255)
-			lbl.Font = Enum.Font.GothamBold
-			lbl.TextSize = 14
+			lbl.BackgroundTransparency = (LOCATION_TEXT_BG and 0) or 1
+			lbl.BackgroundColor3 = Color3.fromRGB(20,20,22)
+			lbl.TextColor3 = Color3.fromRGB(235,235,240)
+			lbl.Font = Enum.Font.GothamSemibold
+			lbl.TextSize = 12
 			lbl.Text = loc.name
+			lbl.TextWrapped = true
+			lbl.TextXAlignment = Enum.TextXAlignment.Center
 			lbl.Parent = bp
+
+			if LOCATION_TEXT_BG then
+				local bCorner = Instance.new("UICorner")
+				bCorner.CornerRadius = UDim.new(0,6)
+				bCorner.Parent = lbl
+
+				local bStroke = Instance.new("UIStroke")
+				bStroke.Color = Color3.fromRGB(40,40,44)
+				bStroke.Transparency = 0.7
+				bStroke.Thickness = 1
+				bStroke.Parent = lbl
+			end
 
 			entry.worldPart = part
 		end
@@ -509,7 +552,7 @@ local function enableLocationMarkers(screen)
 				local enabled = (LOCATION_SETTINGS[loc.name] ~= false)
 				e.worldPart.Position = loc.pos
 				e.worldPart.Transparency = enabled and 0 or 1
-				-- ensure attached BillboardGui / label are shown/hidden as well
+				-- ensure attached BillboardGui
 				pcall(function()
 					local bp = e.worldPart:FindFirstChildOfClass("BillboardGui")
 					if bp then
@@ -603,10 +646,8 @@ for _, child in pairs(Workspace:GetChildren()) do
 	onModelAdded(child)
 end
 
--- Also watch descendants so models/humanoids added deep in the hierarchy are caught
 Workspace.DescendantAdded:Connect(function(desc)
 	if not desc then return end
-	-- if a Humanoid appears, try to ESP its model parent
 	if desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
 		task.defer(function()
 			if not isPlayerCharacter(desc.Parent) then
@@ -670,10 +711,8 @@ local function createESPGui()
 
 	local loadedSettings = nil
 
-	-- forward declaration for feature modules so saveSettings can reference them
 	local OBJECT_FINDER = { enabled = false }
 
-	-- Persist settings (try writefile/readfile, fallback to Player attributes)
 	local function saveSettings(settings)
 		local data = settings or {
 			esp = ESP_SETTINGS,
@@ -683,10 +722,12 @@ local function createESPGui()
 			playerSpeedEnabled = LocalPlayer:GetAttribute("Rake_PlayerSpeedEnabled") or false,
 			buildingSettings = BUILDING_SETTINGS,
 			locationSettings = LOCATION_SETTINGS,
+				locationTextBackground = LOCATION_TEXT_BG,
 			rakeMeterEnabled = RAKE_METER.enabled or false,
 			useBeamMeter = RAKE_METER.useBeam or false,
 			objectFinderEnabled = (OBJECT_FINDER and OBJECT_FINDER.enabled) or false,
 			improvedLighting = IMPROVED_LIGHTING_ENABLED or false,
+
 			-- improvedLightingIntensity removed
 		}
 		local encoded = HttpService:JSONEncode(data)
@@ -695,7 +736,6 @@ local function createESPGui()
 				writefile(SETTINGS_FILE, encoded)
 			end
 		end)
-		-- always set attribute fallback
 		pcall(function()
 			LocalPlayer:SetAttribute("RakeSettings", encoded)
 		end)
@@ -712,7 +752,6 @@ local function createESPGui()
 			end
 		end)
 		if not ok then
-			-- try attribute fallback
 			pcall(function()
 				local attr = LocalPlayer:GetAttribute("RakeSettings")
 				if attr then
@@ -729,7 +768,6 @@ local function createESPGui()
 
 	local RunService = game:GetService("RunService")
 
-	-- Speed enforcement connections
 	local speedEnforceHumConn = nil
 	local speedEnforceHeartbeat = nil
 	local speedEnforceRenderConn = nil
@@ -751,9 +789,7 @@ local function createESPGui()
 	local function enforceHumanoid(hum)
 		stopSpeedEnforce()
 		if not hum then return end
-		-- immediately set
 		pcall(function() hum.WalkSpeed = playerSpeed end)
-		-- reapply if something else changes it
 		speedEnforceHumConn = hum:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
 			if not hum or not hum.Parent then
 				stopSpeedEnforce()
@@ -763,7 +799,6 @@ local function createESPGui()
 				pcall(function() hum.WalkSpeed = playerSpeed end)
 			end
 		end)
-		-- heartbeat backup: set every frame in case other systems override frequently
 		speedEnforceHeartbeat = RunService.Heartbeat:Connect(function(dt)
 			if not hum or not hum.Parent then
 				stopSpeedEnforce()
@@ -1006,6 +1041,9 @@ local function createESPGui()
 					LOCATION_SETTINGS[k] = v
 				end
 			end
+					if s.locationTextBackground ~= nil then
+						LOCATION_TEXT_BG = s.locationTextBackground
+					end
 		end
 	end
 
@@ -1141,6 +1179,43 @@ local function createESPGui()
 	addTabStroke(visualsBtn)
 	addTabStroke(playerBtn)
 
+	-- Add subtle hover animations to tabs (no color changes)
+	local _okTween = false
+	pcall(function() _okTween = (TweenService ~= nil) end)
+	local _tabTweens = {}
+	local function addTabHover(btn)
+		local baseSize = btn.TextSize or 18
+		local baseTrans = btn.BackgroundTransparency or 0
+		btn.MouseEnter:Connect(function()
+			pcall(function()
+				if _okTween and TweenService then
+					if _tabTweens[btn] then _tabTweens[btn]:Cancel() end
+					_tabTweens[btn] = TweenService:Create(btn, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = math.max(0, baseTrans - 0.06), TextSize = baseSize + 1})
+					_tabTweens[btn]:Play()
+				else
+					btn.BackgroundTransparency = math.max(0, baseTrans - 0.06)
+					btn.TextSize = baseSize + 1
+				end
+			end)
+		end)
+		btn.MouseLeave:Connect(function()
+			pcall(function()
+				if _okTween and TweenService then
+					if _tabTweens[btn] then _tabTweens[btn]:Cancel() end
+					_tabTweens[btn] = TweenService:Create(btn, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = baseTrans, TextSize = baseSize})
+					_tabTweens[btn]:Play()
+				else
+					btn.BackgroundTransparency = baseTrans
+					btn.TextSize = baseSize
+				end
+			end)
+		end)
+	end
+
+	addTabHover(homeBtn)
+	addTabHover(visualsBtn)
+	addTabHover(playerBtn)
+
 	-- Tab indicator (underlines active tab)
 	local tabIndicator = Instance.new("Frame")
 	tabIndicator.Name = "TabIndicator"
@@ -1167,11 +1242,15 @@ local function createESPGui()
 	content.Position = UDim2.new(0, 0, 0, 36)
 	content.BackgroundTransparency = 1
 	content.Parent = mainFrame
+	-- Prevent off-screen child frames from showing before they slide in
+	content.ClipsDescendants = true
+	mainFrame.ClipsDescendants = true
 
 	-- Home
 	local homeSection = Instance.new("Frame")
 	homeSection.Name = "HomeSection"
 	homeSection.Size = UDim2.new(1, 0, 1, 0)
+	homeSection.Position = UDim2.new(0, 0, 0, 0)
 	homeSection.Parent = content
 
 	local homeCard = Instance.new("Frame")
@@ -1215,26 +1294,41 @@ local function createESPGui()
 	body.TextXAlignment = Enum.TextXAlignment.Left
 	body.Parent = homeCard
 
-	-- Tips list
+	-- Tips list (rendered inside a vertical layout for consistent spacing)
 	local tips = {
 		"Tip 1. If Player speed is enabled, keep it down to 12-14 so the system doesn't think your movement is bugged and teleports you back.",
 		"Tip 2. Use the location markers to find important locations across the map.",
 		"Tip 3. Use the highlights (ESP) to find out where Rake and other players are.",
-		"Tip 4. Join my Discord server for updates on this script, and other useful apps. Press the button below to get invited."
+		"Tip 4. Use the object finder to locate important items in the game world.",
+		"Tip 5. This game doesn't have an actual proper anti-cheat lol.",
+		"Tip 6. Join my Discord server for updates on this script, and other useful apps. Press the button below to get invited."
 	}
 
 
+	-- container for tips so layout is consistent and easier to style
+	local tipsContainer = Instance.new("Frame")
+	tipsContainer.Name = "TipsContainer"
+	tipsContainer.Size = UDim2.new(1, -56, 0, #tips * 22)
+	tipsContainer.Position = UDim2.new(0, 28, 0, 168)
+	tipsContainer.BackgroundTransparency = 1
+	tipsContainer.Parent = homeCard
+
+	local tipsLayout = Instance.new("UIListLayout")
+	tipsLayout.Parent = tipsContainer
+	tipsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	tipsLayout.Padding = UDim.new(0, 6)
+
 	for i, t in ipairs(tips) do
 		local tl = Instance.new("TextLabel")
-		tl.Size = UDim2.new(1, -56, 0, 20)
-		tl.Position = UDim2.new(0, 28, 0, 168 + (i-1) * 22)
+		tl.Size = UDim2.new(1, 0, 0, 20)
 		tl.BackgroundTransparency = 1
 		tl.Font = Enum.Font.Gotham
 		tl.TextSize = 13
 		tl.Text = "• " .. t
 		tl.TextColor3 = Color3.fromRGB(200,200,205)
 		tl.TextXAlignment = Enum.TextXAlignment.Left
-		tl.Parent = homeCard
+		tl.LayoutOrder = i
+		tl.Parent = tipsContainer
 	end
 
 	-- reposition homeCard to fit tips + button
@@ -1409,7 +1503,8 @@ local function createESPGui()
 	local visualsSection = Instance.new("Frame")
 	visualsSection.Name = "VisualsSection"
 	visualsSection.Size = UDim2.new(1, 0, 1, 0)
-	visualsSection.Visible = false
+	visualsSection.Visible = true
+	visualsSection.Position = UDim2.new(1, 0, 0, 0)
 	visualsSection.BackgroundTransparency = 1
 	visualsSection.Parent = content
 
@@ -1417,7 +1512,8 @@ local function createESPGui()
 	local playerSection = Instance.new("Frame")
 	playerSection.Name = "PlayerSection"
 	playerSection.Size = UDim2.new(1, 0, 1, 0)
-	playerSection.Visible = false
+	playerSection.Visible = true
+	playerSection.Position = UDim2.new(2, 0, 0, 0)
 	playerSection.BackgroundTransparency = 1
 	playerSection.Parent = content
 
@@ -1868,6 +1964,31 @@ local function createESPGui()
 
 	yOffset = yOffset + 44
 
+	-- horizontal separator (visual split like the lighting section)
+	local sep = Instance.new("Frame")
+	sep.Size = UDim2.new(1, -16, 0, 2)
+	sep.Position = UDim2.new(0, 8, 0, yOffset)
+	sep.BackgroundColor3 = Color3.fromRGB(80,80,80)
+	sep.BackgroundTransparency = 0.35
+	sep.Parent = leftCol
+
+	yOffset = yOffset + 12
+
+	-- section header (minimal safe restyle)
+	local header = Instance.new("TextLabel")
+	header.Size = UDim2.new(1, -16, 0, 24)
+	header.Position = UDim2.new(0, 8, 0, yOffset)
+	header.BackgroundTransparency = 1
+	header.Font = Enum.Font.GothamBold
+	header.TextSize = 18
+	header.Text = "Location Related"
+	header.TextColor3 = Color3.fromRGB(245,245,245)
+	header.TextXAlignment = Enum.TextXAlignment.Left
+	header.ZIndex = 900
+	header.Parent = leftCol
+
+	yOffset = yOffset + 24
+
 	local showLocations = true
 	local locToggle = makeToggle(leftCol, "Show Locations", showLocations, function(v)
 		showLocations = v
@@ -1880,6 +2001,52 @@ local function createESPGui()
 		saveSettings()
 	end)
 	locToggle.Position = UDim2.new(0, 8, 0, yOffset)
+	yOffset = yOffset + 44
+
+	-- Text Background toggle: when off, markers omit the label background
+	local textBgToggle = makeToggle(leftCol, "Text Background", LOCATION_TEXT_BG, function(v)
+		LOCATION_TEXT_BG = v
+		-- update existing screen markers
+		for _, e in pairs(LOCATION_MARKERS) do
+			pcall(function()
+				if e and e.label then
+					if v then
+						e.label.BackgroundTransparency = 0
+						if not e.label:FindFirstChildWhichIsA("UICorner") then
+							local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0,6) c.Parent = e.label
+						end
+						if not e.label:FindFirstChildWhichIsA("UIStroke") then
+							local s = Instance.new("UIStroke") s.Color = Color3.fromRGB(40,40,44) s.Transparency = 0.6 s.Thickness = 1 s.Parent = e.label
+						end
+					else
+						e.label.BackgroundTransparency = 1
+						local c = e.label:FindFirstChildWhichIsA("UICorner") if c then c:Destroy() end
+						local s = e.label:FindFirstChildWhichIsA("UIStroke") if s then s:Destroy() end
+					end
+				end
+				-- world billboard labels
+				if e and e.worldPart then
+					local bp = e.worldPart:FindFirstChildOfClass("BillboardGui")
+					if bp then
+						local wl = bp:FindFirstChildWhichIsA("TextLabel")
+						if wl then
+							if v then
+								wl.BackgroundTransparency = 0
+								if not wl:FindFirstChildWhichIsA("UICorner") then local c2 = Instance.new("UICorner") c2.CornerRadius = UDim.new(0,6) c2.Parent = wl end
+								if not wl:FindFirstChildWhichIsA("UIStroke") then local s2 = Instance.new("UIStroke") s2.Color = Color3.fromRGB(40,40,44) s2.Transparency = 0.7 s2.Thickness = 1 s2.Parent = wl end
+							else
+								wl.BackgroundTransparency = 1
+								local c2 = wl:FindFirstChildWhichIsA("UICorner") if c2 then c2:Destroy() end
+								local s2 = wl:FindFirstChildWhichIsA("UIStroke") if s2 then s2:Destroy() end
+							end
+						end
+					end
+				end
+			end)
+		end
+		pcall(function() saveSettings() end)
+	end)
+	textBgToggle.Position = UDim2.new(0, 8, 0, yOffset)
 	yOffset = yOffset + 44
 
 
@@ -2036,7 +2203,7 @@ local function createESPGui()
 	end)
 	beamToggle.Position = UDim2.new(0, 8, 0, 52)
 
-	-- Generic beta notice helper (reusable)
+	-- Generic beta 
 	local function showBetaNoticeOnce(msg)
 		if not SCREEN_GUI then return end
 		local existing = SCREEN_GUI:FindFirstChild("BetaNotice")
@@ -2076,7 +2243,11 @@ local function createESPGui()
 		shouldEnableObjectFinder = true
 	end
 
-	local TARGET_NAMES = {"scrap","flare gun","flare","supply drop","drop"}
+	local TARGET_NAMES = {"scrap","flaregun","supply drop","drop"}
+	-- whitelist of accepted no-space tokens that count as supply objects
+	local SUPPLY_TOKENS = {
+		supplydrop = true,
+	}
 	local NAME_TAG_COLOR = Color3.new(1,1,0)
 	local COLOR_SUPPLY = Color3.fromRGB(80,255,120)
 	local COLOR_SCRAP = Color3.fromRGB(140,85,40)
@@ -2129,8 +2300,31 @@ local function createESPGui()
 
 	local function clearClusters()
 		for id, c in pairs(OBJECT_FINDER.clusters) do
+			-- if cluster used a dedicated gui/part, destroy them
 			if c.gui and c.gui.Parent then c.gui:Destroy() end
 			if c.part and c.part.Parent then c.part:Destroy() end
+			-- if cluster was using a representative member's nameTag, restore it
+			if c.representative and OBJECT_FINDER.tracked[c.representative] then
+				local td = OBJECT_FINDER.tracked[c.representative]
+				pcall(function()
+					if td.nameTag and td.nameTag.Parent then
+						local lbl = td.nameTag:FindFirstChildWhichIsA("TextLabel")
+						if lbl then
+							if c.originalText then lbl.Text = c.originalText end
+							if c.originalColor then lbl.TextColor3 = c.originalColor end
+						end
+						td.nameTag.Enabled = true
+					end
+				end)
+			end
+			-- re-enable member nameTags that were disabled
+			if c.members then
+				for memberKey, _ in pairs(c.members) do
+					if OBJECT_FINDER.tracked[memberKey] and OBJECT_FINDER.tracked[memberKey].nameTag then
+						pcall(function() OBJECT_FINDER.tracked[memberKey].nameTag.Enabled = true end)
+					end
+				end
+			end
 			OBJECT_FINDER.clusters[id] = nil
 		end
 	end
@@ -2212,27 +2406,46 @@ local function createESPGui()
 			modelRoot = inst
 		end
 		local nameToCheck = (modelRoot and (modelRoot.Name) or inst.Name) or ""
-		local lname = nameToCheck:lower()
-		if lname == "scrapspawn" or lname == "scrapspawns" or lname == "supplylerppos" or lname == "supplycratemain" or lname == "supplycrate" or lname == "supplycrates" or string.find(lname, "supplycrate", 1, true) then return end
+		-- normalize forms: raw lower, a spaced-normalized form and a nospace form
+		local rawLower = nameToCheck:lower()
+		local normSpaces = rawLower:gsub("[_%-]", " "):gsub("[^%w%s]", ""):gsub("%s+", " "):gsub("^%s*(.-)%s*$", "%1")
+		local normNoSpace = rawLower:gsub("[_%s%-%p]", "")
+		-- filter out known irrelevant names
+		if normNoSpace == "scrapspawn" or normNoSpace == "scrapspawns" or normNoSpace == "supplylerppos" or normNoSpace == "supplycratemain" or normNoSpace == "supplycrate" then return end
 		local category = nil
-		if string.find(lname, "supply drop", 1, true) or string.find(lname, "supply", 1, true) or string.find(lname, "drop", 1, true) then
-			category = "supply"
-		elseif string.find(lname, "scrap", 1, true) then
-			category = "scrap"
-		elseif string.find(lname, "flareguncue", 1, true) or string.find(lname, "flare_gun_cue", 1, true) then
-			category = "flare_cue"
-		elseif string.find(lname, "flaregun", 1, true) or string.find(lname, "flare gun", 1, true) or string.find(lname, "flare", 1, true) then
-			-- Only accept explicit flare gun parts: "flare gun" or "flare gun cue"
-			local allowed = false
-			if string.find(lname, "flare gun cue", 1, true) or string.find(lname, "flare_gun_cue", 1, true) then
-				allowed = true
-			elseif string.find(lname, "flare gun", 1, true) or string.find(lname, "flaregun", 1, true) then
-				allowed = true
+		-- Prefer explicit supply / scrap matches (strict: require exact words or known tokens)
+		local words = {}
+		for w in normSpaces:gmatch("%S+") do table.insert(words, w) end
+		local function hasWord(w)
+			for i=1,#words do if words[i] == w then return true end end
+			return false
+		end
+		local isSupply = false
+		if string.find(normSpaces, "supply drop", 1, true) then
+			isSupply = true
+		elseif hasWord("supply") and hasWord("drop") then
+			isSupply = true
+		else
+			-- accept a small set of known no-space tokens exactly
+			local zn = normNoSpace
+			if SUPPLY_TOKENS[zn] then
+				isSupply = true
 			end
-			if allowed then
-				category = "flare"
+		end
+		if isSupply then
+			category = "supply"
+		
+		elseif string.find(normSpaces, "scrap", 1, true) or string.find(normNoSpace, "scrap", 1, true) then
+			category = "scrap"
+		-- Detect flare clue/cue variants first (more specific)
+		elseif string.find(normSpaces, "flare gun clue", 1, true) or string.find(normSpaces, "flare gun cue", 1, true) or string.find(normSpaces, "flare clue", 1, true) or string.find(normSpaces, "flare cue", 1, true) or string.find(normNoSpace, "flareguncue", 1, true) or string.find(normNoSpace, "flareguncue", 1, true) or string.find(normNoSpace, "flareclue", 1, true) then
+			category = "flare_cue"
+
+		elseif string.find(normSpaces, "flare gun", 1, true) or string.find(normNoSpace, "flaregun", 1, true) or string.find(normSpaces, "flare", 1, true) then
+			if string.find(normSpaces, "clue", 1, true) or string.find(normNoSpace, "clue", 1, true) then
+				category = "flare_cue"
 			else
-				category = nil
+				category = "flare"
 			end
 		else
 			category = findBestMatch(nameToCheck)
@@ -2345,13 +2558,31 @@ local function createESPGui()
 							local sum = Vector3.new(0,0,0)
 							for _, it in ipairs(group) do sum = sum + it.pos end
 							local center = sum / #group
-							local c = createClusterGuiAt(center, cfg.label)
+							-- Use one of the group's existing tracked nameTags as the cluster label.
+							local rep = group[1].key
 							local id = tostring(center.X) .. ":" .. tostring(center.Z)
-							OBJECT_FINDER.clusters[id] = { gui = c.gui, part = c.part, members = {} }
+							OBJECT_FINDER.clusters[id] = { representative = rep, members = {}, originalText = nil, label = cfg.label }
 							for _, it in ipairs(group) do
 								OBJECT_FINDER.clusters[id].members[it.key] = true
+								-- disable other members' nameTags; keep one representative
 								if OBJECT_FINDER.tracked[it.key] and OBJECT_FINDER.tracked[it.key].nameTag then
-									pcall(function() OBJECT_FINDER.tracked[it.key].nameTag.Enabled = false end)
+									if it.key == rep then
+										-- store original text and color, then set to cluster label and supply color
+										pcall(function()
+											local lbl = OBJECT_FINDER.tracked[rep].nameTag:FindFirstChildWhichIsA("TextLabel")
+											if lbl then
+												OBJECT_FINDER.clusters[id].originalText = lbl.Text
+												OBJECT_FINDER.clusters[id].originalColor = lbl.TextColor3
+												lbl.Text = cfg.label
+												-- if this cluster label is a Supply Drop, use supply color
+												if cfg.label and string.find(cfg.label:lower(), "supply") then
+													lbl.TextColor3 = COLOR_SUPPLY
+												end
+											end
+										end)
+									else
+										pcall(function() OBJECT_FINDER.tracked[it.key].nameTag.Enabled = false end)
+									end
 								end
 							end
 						end
@@ -2490,6 +2721,17 @@ local function createESPGui()
 	local tweenInfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 	local function setActiveSection(name)
+		-- ensure sections are visible for tweening
+		homeSection.Visible = true
+		visualsSection.Visible = true
+		playerSection.Visible = true
+
+		-- helper to compute target positions so active section slides to X=0
+		local order = { Home = homeSection, Visuals = visualsSection, Player = playerSection }
+		local activeIndex = (name == "Home" and 1) or (name == "Visuals" and 2) or 3
+		local function posForIndex(idx)
+			return UDim2.new(idx - activeIndex, 0, 0, 0)
+		end
 		if name == "Home" then
 			TweenService:Create(homeBtn, tweenInfo, {Position = homeActivePos, TextColor3 = Color3.fromRGB(150,8,8)}):Play()
 			TweenService:Create(visualsBtn, tweenInfo, {Position = visualsDefaultPos, TextColor3 = Color3.fromRGB(255,255,255)}):Play()
@@ -2503,9 +2745,10 @@ local function createESPGui()
 				local tgt = UDim2.new(0, homeDefaultPos.X.Offset, 1, -3)
 				TweenService:Create(tabIndicator, tweenInfo, {Position = tgt}):Play()
 			end
-			homeSection.Visible = true
-			visualsSection.Visible = false
-			playerSection.Visible = false
+			-- slide sections: home -> center
+			TweenService:Create(homeSection, tweenInfo, {Position = posForIndex(1)}):Play()
+			TweenService:Create(visualsSection, tweenInfo, {Position = posForIndex(2)}):Play()
+			TweenService:Create(playerSection, tweenInfo, {Position = posForIndex(3)}):Play()
 		elseif name == "Visuals" then
 			TweenService:Create(visualsBtn, tweenInfo, {Position = visualsActivePos, TextColor3 = Color3.fromRGB(150,8,8)}):Play()
 			TweenService:Create(homeBtn, tweenInfo, {Position = homeDefaultPos, TextColor3 = Color3.fromRGB(255,255,255)}):Play()
@@ -2519,9 +2762,10 @@ local function createESPGui()
 				local tgt = UDim2.new(0, visualsDefaultPos.X.Offset, 1, -3)
 				TweenService:Create(tabIndicator, tweenInfo, {Position = tgt}):Play()
 			end
-			homeSection.Visible = false
-			visualsSection.Visible = true
-			playerSection.Visible = false
+			-- slide sections: visuals -> center
+			TweenService:Create(homeSection, tweenInfo, {Position = posForIndex(1)}):Play()
+			TweenService:Create(visualsSection, tweenInfo, {Position = posForIndex(2)}):Play()
+			TweenService:Create(playerSection, tweenInfo, {Position = posForIndex(3)}):Play()
 		else
 			TweenService:Create(playerBtn, tweenInfo, {Position = playerActivePos, TextColor3 = Color3.fromRGB(150,8,8)}):Play()
 			TweenService:Create(homeBtn, tweenInfo, {Position = homeDefaultPos, TextColor3 = Color3.fromRGB(255,255,255)}):Play()
@@ -2535,9 +2779,10 @@ local function createESPGui()
 				local tgt = UDim2.new(0, playerDefaultPos.X.Offset, 1, -3)
 				TweenService:Create(tabIndicator, tweenInfo, {Position = tgt}):Play()
 			end
-			homeSection.Visible = false
-			visualsSection.Visible = false
-			playerSection.Visible = true
+			-- slide sections: player -> center
+			TweenService:Create(homeSection, tweenInfo, {Position = posForIndex(1)}):Play()
+			TweenService:Create(visualsSection, tweenInfo, {Position = posForIndex(2)}):Play()
+			TweenService:Create(playerSection, tweenInfo, {Position = posForIndex(3)}):Play()
 		end
 	end
 
@@ -2552,6 +2797,15 @@ local function createESPGui()
 	end)
 
 	setActiveSection("Home")
+	-- subtle pop-in animation for the main panel
+	pcall(function()
+		local orig = mainFrame.Position
+		mainFrame.Position = UDim2.new(orig.X.Scale, orig.X.Offset, orig.Y.Scale, orig.Y.Offset - 28)
+		if TweenService then
+			local popTween = TweenService:Create(mainFrame, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = orig})
+			popTween:Play()
+		end
+	end)
 end
 
 -- Create GUI 
