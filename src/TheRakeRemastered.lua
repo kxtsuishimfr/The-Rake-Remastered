@@ -1,9 +1,3 @@
--- Unauthorized sale, redistribution, or removal of attribution from this script
--- constitutes a violation of the applicable license and may result in legal action,
--- including but not limited to DMCA takedown requests. Review the license terms
--- prior to any form of redistribution.
--- READ THE GOD DAMN LICENSE
-
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
@@ -687,6 +681,9 @@ local function createESPGui()
 
 	local loadedSettings = nil
 
+	-- forward declaration for feature modules so saveSettings can reference them
+	local OBJECT_FINDER = { enabled = false }
+
 	-- Persist settings (try writefile/readfile, fallback to Player attributes)
 	local function saveSettings(settings)
 		local data = settings or {
@@ -696,9 +693,10 @@ local function createESPGui()
 			playerSpeed = LocalPlayer:GetAttribute("Rake_PlayerSpeed") or 16,
 			playerSpeedEnabled = LocalPlayer:GetAttribute("Rake_PlayerSpeedEnabled") or false,
 			buildingSettings = BUILDING_SETTINGS,
-            locationSettings = LOCATION_SETTINGS,
+			locationSettings = LOCATION_SETTINGS,
 			rakeMeterEnabled = RAKE_METER.enabled or false,
 			useBeamMeter = RAKE_METER.useBeam or false,
+			objectFinderEnabled = (OBJECT_FINDER and OBJECT_FINDER.enabled) or false,
 			improvedLighting = IMPROVED_LIGHTING_ENABLED or false,
 			-- improvedLightingIntensity removed
 		}
@@ -2074,7 +2072,7 @@ local function createESPGui()
 	end
 
 	-- Object Finder (integrated from Beta Features/ObjectFinder.lua)
-	local OBJECT_FINDER = {
+	OBJECT_FINDER = {
 		enabled = false,
 		isBeta = true,
 		tracked = {},
@@ -2082,6 +2080,12 @@ local function createESPGui()
 		connections = {},
 		clusterAcc = 0,
 	}
+
+	-- Restore Object Finder enabled state from loaded settings, if present
+	if loadedSettings and loadedSettings.objectFinderEnabled then
+		OBJECT_FINDER.enabled = loadedSettings.objectFinderEnabled
+		-- Defer enabling until after OBJECT_FINDER functions defined; we'll enable below
+	end
 
 	local TARGET_NAMES = {"scrap","flare gun","flare","supply drop","drop"}
 	local NAME_TAG_COLOR = Color3.new(1,1,0)
@@ -2399,6 +2403,11 @@ local function createESPGui()
 	end)
 	objFinderToggle.Position = UDim2.new(0, 8, 0, 92)
 
+	-- If loaded settings requested Object Finder enabled, enable it now
+	if OBJECT_FINDER.enabled then
+		pcall(function() enableObjectFinder() end)
+	end
+
 	-- Active section handling: move button up and change text color
 	local homeDefaultPos = homeBtn.Position
 	local visualsDefaultPos = visualsBtn.Position
@@ -2473,7 +2482,7 @@ local function createESPGui()
 	setActiveSection("Home")
 end
 
--- Create GUI and attempt to keep on top
+-- Create GUI 
 createESPGui()
 if SCREEN_GUI then
 	local ok = false
@@ -2488,6 +2497,22 @@ if SCREEN_GUI then
 	end
 	SCREEN_GUI.Enabled = true
 end
+
+-- Reapply improved/fullbright lighting after player respawn
+pcall(function()
+	if LocalPlayer then
+		LocalPlayer.CharacterAdded:Connect(function()
+			if IMPROVED_LIGHTING_ENABLED then
+				pcall(function()
+					dofullbright()
+					if not _dofullbright_conn then
+						_dofullbright_conn = Light.LightingChanged:Connect(dofullbright)
+					end
+				end)
+			end
+		end)
+	end
+end)
 
 local function setMouseVisible(visible)
 	if visible then
@@ -2520,6 +2545,3 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 -- GUI END
-
-
-
