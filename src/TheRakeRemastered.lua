@@ -195,7 +195,9 @@ local function enableRakeMeter(screen)
 				return
 			end
 
-			local rake = getCachedRake(0.25) or findRakeModel()
+			-- throttle workspace searches more aggressively when we don't have a cached rake
+			local throttle = RAKE_METER.cachedRake and 0.25 or 2.0
+			local rake = getCachedRake(throttle)
 			if not rake then
 				if RAKE_METER.label then
 					RAKE_METER.label.Text = "Rake is not active"
