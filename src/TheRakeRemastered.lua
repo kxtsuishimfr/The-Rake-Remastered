@@ -2049,6 +2049,356 @@ local function createESPGui()
 	end)
 	beamToggle.Position = UDim2.new(0, 8, 0, 52)
 
+	-- Generic beta notice helper (reusable)
+	local function showBetaNoticeOnce(msg)
+		if not SCREEN_GUI then return end
+		local existing = SCREEN_GUI:FindFirstChild("BetaNotice")
+		if existing then existing:Destroy() end
+		local note = Instance.new("TextLabel")
+		note.Name = "BetaNotice"
+		note.Size = UDim2.new(0, 420, 0, 28)
+		note.Position = UDim2.new(0.5, -210, 0, 6)
+		note.BackgroundColor3 = Color3.fromRGB(200, 120, 40)
+		note.BackgroundTransparency = 0.06
+		note.Font = Enum.Font.GothamBold
+		note.TextSize = 14
+		note.TextColor3 = Color3.fromRGB(255,255,255)
+		note.Text = msg or "This feature is currently in beta, and may be instable."
+		note.TextXAlignment = Enum.TextXAlignment.Center
+		note.ZIndex = 1200
+		local corner = Instance.new("UICorner") corner.CornerRadius = UDim.new(0,6) corner.Parent = note
+		note.Parent = SCREEN_GUI
+		task.delay(4, function()
+			pcall(function() if note then note:Destroy() end end)
+		end)
+	end
+
+	-- Object Finder (integrated from Beta Features/ObjectFinder.lua)
+	local OBJECT_FINDER = {
+		enabled = false,
+		isBeta = true,
+		tracked = {},
+		clusters = {},
+		connections = {},
+		clusterAcc = 0,
+	}
+
+	local TARGET_NAMES = {"scrap","flare gun","flare","supply drop","drop"}
+	local NAME_TAG_COLOR = Color3.new(1,1,0)
+	local COLOR_SUPPLY = Color3.fromRGB(80,255,120)
+	local COLOR_SCRAP = Color3.fromRGB(140,85,40)
+	local COLOR_FLARE = Color3.fromRGB(255,105,180)
+	local COLOR_CUE = Color3.fromRGB(255,255,255)
+	local CLUSTER_CONFIG = { ["scrap"] = { label = "Supply Drop", radius = 8, minCount = 3 } }
+
+	local function titleCase(s)
+		local out = {}
+		for word in s:gmatch("%S+") do
+			out[#out+1] = word:sub(1,1):upper() .. word:sub(2)
+		end
+		return table.concat(out, " ")
+	end
+
+	local function findBestMatch(name)
+		if not name then return nil end
+		local lower = name:lower()
+		local best = nil
+		for _, t in ipairs(TARGET_NAMES) do
+			local tl = t:lower()
+			if string.find(lower, tl, 1, true) then
+				if (not best) or (#tl > #best) then best = tl end
+			end
+		end
+		return best
+	end
+
+	local function createNameTag(object, adorneePart, textColor)
+		if not SCREEN_GUI then return end
+		local billboard = Instance.new("BillboardGui")
+		billboard.Name = "NameTag"
+		billboard.Adornee = adorneePart or object
+		billboard.Parent = SCREEN_GUI
+		billboard.Size = UDim2.new(0, 100, 0, 40)
+		billboard.StudsOffsetWorldSpace = Vector3.new(0, 3, 0)
+		billboard.AlwaysOnTop = true
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.new(1,0,1,0)
+		label.BackgroundTransparency = 1
+		label.Text = object.Name or "Unknown"
+		label.TextColor3 = textColor or NAME_TAG_COLOR
+		label.TextScaled = true
+		label.Font = Enum.Font.SourceSansBold
+		label.TextStrokeTransparency = 0
+		label.TextStrokeColor3 = Color3.new(0,0,0)
+		label.Parent = billboard
+		return billboard
+	end
+
+	local function clearClusters()
+		for id, c in pairs(OBJECT_FINDER.clusters) do
+			if c.gui and c.gui.Parent then c.gui:Destroy() end
+			if c.part and c.part.Parent then c.part:Destroy() end
+			OBJECT_FINDER.clusters[id] = nil
+		end
+	end
+
+	local function createClusterGuiAt(pos, text)
+		local part = Instance.new("Part")
+		part.Name = "ObjectClusterPart"
+		part.Anchored = true
+		part.CanCollide = false
+		part.Transparency = 1
+		part.Size = Vector3.new(1,1,1)
+		part.Position = pos
+		part.Parent = Workspace
+		local billboard = Instance.new("BillboardGui")
+		billboard.Name = "ClusterTag"
+		billboard.Adornee = part
+		billboard.Parent = SCREEN_GUI
+		billboard.Size = UDim2.new(0,160,0,40)
+		billboard.StudsOffsetWorldSpace = Vector3.new(0,3,0)
+		billboard.AlwaysOnTop = true
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.new(1,1,1,1)
+		label.BackgroundTransparency = 1
+		label.Text = text
+		label.TextScaled = true
+		label.Font = Enum.Font.SourceSansBold
+		label.TextColor3 = NAME_TAG_COLOR
+		label.TextStrokeTransparency = 0
+		label.TextStrokeColor3 = Color3.new(0,0,0)
+		label.Parent = billboard
+		return { part = part, gui = billboard }
+	end
+
+	local function enforceFlareUniqueness()
+		local flareItems = {}
+		local char = LocalPlayer and LocalPlayer.Character
+		local hrpPos = nil
+		if char then
+			local hrp = char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart
+			if hrp then hrpPos = hrp.Position end
+		end
+		for key, data in pairs(OBJECT_FINDER.tracked) do
+			if data and data.match and data.match == "flare" then
+				local posPart = nil
+				if key:IsA("Model") then posPart = key.PrimaryPart or key:FindFirstChildWhichIsA("BasePart")
+				elseif key:IsA("BasePart") then posPart = key end
+				local dist = (posPart and hrpPos) and (posPart.Position - hrpPos).Magnitude or math.huge
+				table.insert(flareItems, { key = key, dist = dist, data = data })
+			end
+		end
+		if #flareItems <= 1 then
+			if #flareItems == 1 then
+				local only = flareItems[1]
+				if only.data.highlight then only.data.highlight.Enabled = true end
+				if only.data.nameTag then only.data.nameTag.Enabled = true end
+			end
+			return
+		end
+		table.sort(flareItems, function(a,b) return a.dist < b.dist end)
+		local keep = flareItems[1].key
+		for i=1,#flareItems do
+			local item = flareItems[i]
+			if item.key == keep then
+				if item.data.highlight then item.data.highlight.Enabled = true end
+				if item.data.nameTag then item.data.nameTag.Enabled = true end
+			else
+				if item.data.highlight then item.data.highlight.Enabled = false end
+				if item.data.nameTag then item.data.nameTag.Enabled = false end
+			end
+		end
+	end
+
+	local function processInstance(inst)
+		if not inst or not inst.Parent then return end
+		local modelRoot = nil
+		if inst:IsA("BasePart") and inst.Parent and inst.Parent:IsA("Model") then
+			modelRoot = inst.Parent
+		elseif inst:IsA("Model") then
+			modelRoot = inst
+		end
+		local nameToCheck = (modelRoot and (modelRoot.Name) or inst.Name) or ""
+		local lname = nameToCheck:lower()
+		if lname == "scrapspawn" or lname == "scrapspawns" or lname == "supplylerppos" or lname == "supplycratemain" or lname == "supplycrate" or lname == "supplycrates" or string.find(lname, "supplycrate", 1, true) then return end
+		local category = nil
+		if string.find(lname, "supply drop", 1, true) or string.find(lname, "supply", 1, true) or string.find(lname, "drop", 1, true) then
+			category = "supply"
+		elseif string.find(lname, "scrap", 1, true) then
+			category = "scrap"
+		elseif string.find(lname, "flareguncue", 1, true) or string.find(lname, "flare_gun_cue", 1, true) then
+			category = "flare_cue"
+		elseif string.find(lname, "flaregun", 1, true) or string.find(lname, "flare gun", 1, true) or string.find(lname, "flare", 1, true) then
+			category = "flare"
+		else
+			category = findBestMatch(nameToCheck)
+		end
+		local match = category
+		if not match then return end
+		local key = modelRoot or inst
+		if OBJECT_FINDER.tracked[key] then return end
+		local adornPart = nil
+		if key:IsA("Model") then adornPart = key.PrimaryPart or key:FindFirstChild("HumanoidRootPart") or key:FindFirstChildWhichIsA("BasePart") else adornPart = key end
+		local highlight = Instance.new("Highlight")
+		highlight.Adornee = key
+		highlight.FillTransparency = 0.8
+		highlight.Parent = key
+		local nameTagColor = NAME_TAG_COLOR
+		if match == "supply" then
+			highlight.FillColor = COLOR_SUPPLY
+			highlight.OutlineColor = COLOR_SUPPLY
+			nameTagColor = COLOR_SUPPLY
+		elseif match == "scrap" then
+			highlight.FillColor = COLOR_SCRAP
+			highlight.OutlineColor = COLOR_SCRAP
+			nameTagColor = COLOR_SCRAP
+		elseif match == "flare" then
+			highlight.FillColor = COLOR_FLARE
+			highlight.OutlineColor = COLOR_FLARE
+			nameTagColor = COLOR_FLARE
+		elseif match == "flare_cue" then
+			highlight.FillColor = COLOR_CUE
+			highlight.OutlineColor = COLOR_CUE
+			nameTagColor = COLOR_CUE
+		else
+			highlight.FillColor = Color3.new(1,0.5,0)
+			highlight.OutlineColor = Color3.new(1,0.5,0)
+			nameTagColor = NAME_TAG_COLOR
+		end
+		local nameTag = createNameTag(key, adornPart, nameTagColor)
+		if nameTag and nameTag:FindFirstChildWhichIsA("TextLabel") then
+			local lbl = nameTag:FindFirstChildWhichIsA("TextLabel")
+			if lbl then lbl.Text = (key.Name or "") end
+		end
+		OBJECT_FINDER.tracked[key] = { highlight = highlight, nameTag = nameTag, match = match }
+		if match == "flare" then pcall(function() enforceFlareUniqueness() end) end
+	end
+
+	local function initialScanObjectFinder()
+		local all = Workspace:GetDescendants()
+		local batch = 60
+		for i = 1, #all, batch do
+			for j = i, math.min(i+batch-1, #all) do
+				processInstance(all[j])
+			end
+			RunService.Heartbeat:Wait()
+		end
+	end
+
+	local function updateClustersObjectFinder(dt)
+		OBJECT_FINDER.clusterAcc = OBJECT_FINDER.clusterAcc + (dt or 0)
+		if OBJECT_FINDER.clusterAcc < 0.6 then return end
+		OBJECT_FINDER.clusterAcc = 0
+		clearClusters()
+		local byMatch = {}
+		for key, data in pairs(OBJECT_FINDER.tracked) do
+			if key and key.Parent and data and data.match then
+				local posPart = nil
+				if key:IsA("Model") then posPart = key.PrimaryPart or key:FindFirstChild("HumanoidRootPart") or key:FindFirstChildWhichIsA("BasePart")
+				elseif key:IsA("BasePart") then posPart = key end
+				if posPart and posPart.Position then
+					byMatch[data.match] = byMatch[data.match] or {}
+					table.insert(byMatch[data.match], { key = key, pos = posPart.Position })
+				end
+			end
+		end
+		for matchToken, items in pairs(byMatch) do
+			local cfg = CLUSTER_CONFIG[matchToken]
+			if cfg then
+				local used = {}
+				for i = 1, #items do
+					if not used[i] then
+						local group = { items[i] }
+						used[i] = true
+						for j = i+1, #items do
+							if not used[j] and (items[i].pos - items[j].pos).Magnitude <= cfg.radius then
+								table.insert(group, items[j])
+								used[j] = true
+							end
+						end
+						if #group >= cfg.minCount then
+							local sum = Vector3.new(0,0,0)
+							for _, it in ipairs(group) do sum = sum + it.pos end
+							local center = sum / #group
+							local c = createClusterGuiAt(center, cfg.label)
+							local id = tostring(center.X) .. ":" .. tostring(center.Z)
+							OBJECT_FINDER.clusters[id] = { gui = c.gui, part = c.part, members = {} }
+							for _, it in ipairs(group) do
+								OBJECT_FINDER.clusters[id].members[it.key] = true
+								if OBJECT_FINDER.tracked[it.key] and OBJECT_FINDER.tracked[it.key].nameTag then
+									pcall(function() OBJECT_FINDER.tracked[it.key].nameTag.Enabled = false end)
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	local function enableObjectFinder()
+		if OBJECT_FINDER.enabled then return end
+		OBJECT_FINDER.enabled = true
+		OBJECT_FINDER.tracked = {}
+		OBJECT_FINDER.clusters = {}
+		-- scan and hook events
+		task.spawn(initialScanObjectFinder)
+		OBJECT_FINDER.connections.add = Workspace.DescendantAdded:Connect(function(inst)
+			task.defer(function() processInstance(inst) end)
+		end)
+		OBJECT_FINDER.connections.remove = Workspace.DescendantRemoving:Connect(function(inst)
+			for key, data in pairs(OBJECT_FINDER.tracked) do
+				if not key or not key.Parent then
+					if data.highlight and data.highlight.Parent then data.highlight:Destroy() end
+					if data.nameTag and data.nameTag.Parent then data.nameTag:Destroy() end
+					OBJECT_FINDER.tracked[key] = nil
+				end
+			end
+		end)
+		OBJECT_FINDER.connections.heartbeat = RunService.Heartbeat:Connect(function()
+			for key, data in pairs(OBJECT_FINDER.tracked) do
+				if not key or not key.Parent then
+					if data.highlight and data.highlight.Parent then data.highlight:Destroy() end
+					if data.nameTag and data.nameTag.Parent then data.nameTag:Destroy() end
+					OBJECT_FINDER.tracked[key] = nil
+				end
+			end
+		end)
+		OBJECT_FINDER.connections.cluster = RunService.Heartbeat:Connect(function(dt) updateClustersObjectFinder(dt) end)
+	end
+
+	local function disableObjectFinder()
+		if not OBJECT_FINDER.enabled then return end
+		OBJECT_FINDER.enabled = false
+		-- disconnect connections
+		for k,c in pairs(OBJECT_FINDER.connections) do
+			pcall(function() if c and c.Disconnect then c:Disconnect() end end)
+			OBJECT_FINDER.connections[k] = nil
+		end
+		-- destroy tracked highlights and guis
+		for _, data in pairs(OBJECT_FINDER.tracked) do
+			pcall(function() if data.highlight then data.highlight:Destroy() end end)
+			pcall(function() if data.nameTag then data.nameTag:Destroy() end end)
+		end
+		OBJECT_FINDER.tracked = {}
+		-- clear clusters
+		clearClusters()
+	end
+
+	-- Add toggle to right column
+	local objFinderToggle = makeToggle(rakeGroup, "Object Finder (Beta)", OBJECT_FINDER.enabled, function(v)
+		if v then
+			enableObjectFinder()
+			if OBJECT_FINDER.isBeta then
+				showBetaNoticeOnce()
+			end
+		else
+			disableObjectFinder()
+		end
+		saveSettings()
+	end)
+	objFinderToggle.Position = UDim2.new(0, 8, 0, 92)
+
 	-- Active section handling: move button up and change text color
 	local homeDefaultPos = homeBtn.Position
 	local visualsDefaultPos = visualsBtn.Position
@@ -2170,5 +2520,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 -- GUI END
+
 
 
