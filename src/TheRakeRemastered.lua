@@ -523,8 +523,20 @@ local function enableLocationMarkers(screen)
 		for _, loc in ipairs(LOCATIONS) do
 			local e = LOCATION_MARKERS[loc.name]
 			if e and e.worldPart then
+				local enabled = (LOCATION_SETTINGS[loc.name] ~= false)
 				e.worldPart.Position = loc.pos
-				e.worldPart.Transparency = (LOCATION_SETTINGS[loc.name] == false) and 1 or 0
+				e.worldPart.Transparency = enabled and 0 or 1
+				-- ensure attached BillboardGui / label are shown/hidden as well
+				pcall(function()
+					local bp = e.worldPart:FindFirstChildOfClass("BillboardGui")
+					if bp then
+						pcall(function() bp.Enabled = enabled end)
+						local lbl = bp:FindFirstChildWhichIsA("TextLabel")
+						if lbl then
+							lbl.Visible = enabled
+						end
+					end
+				end)
 			end
 		end
 	end)
@@ -1904,7 +1916,7 @@ local function createESPGui()
 	chooseList.BackgroundTransparency = 0
 	chooseList.Visible = false
 	chooseList.Active = true
-	chooseList.ZIndex = 199
+	chooseList.ZIndex = 205
 	chooseList.Parent = leftCol
 
 	yOffset = yOffset + 12
@@ -1926,12 +1938,35 @@ local function createESPGui()
 		local initial = LOCATION_SETTINGS[loc.name] ~= false
 		local t = makeToggle(chooseList, loc.name, initial, function(v)
 			LOCATION_SETTINGS[loc.name] = v
-			-- immediately update markers visibility
+			-- immediately update markers visibility (UI containers)
 			pcall(function() updateLocationMarkers(screen) end)
+			-- also update any existing world-part marker transparency immediately
+			pcall(function()
+				local entry = LOCATION_MARKERS[loc.name]
+				if entry and entry.worldPart then
+					local enabled = v
+					entry.worldPart.Transparency = enabled and 0 or 1
+					local bp = entry.worldPart:FindFirstChildOfClass("BillboardGui")
+					if bp then
+						pcall(function() bp.Enabled = enabled end)
+						local lbl = bp:FindFirstChildWhichIsA("TextLabel")
+						if lbl then lbl.Visible = enabled end
+					end
+				end
+			end)
 			saveSettings()
 		end)
 		t.Position = UDim2.new(0, 8, 0, (i - 1) * 44)
 		table.insert(locToggles, t)
+		-- ensure the toggle and its children render above nearby UI (like lightning labels)
+		pcall(function()
+			t.ZIndex = 206
+			for _, d in ipairs(t:GetDescendants()) do
+				if pcall(function() return d.ZIndex end) then
+					d.ZIndex = 206
+				end
+			end
+		end)
 	end
 
 	chooseBtn.MouseButton1Click:Connect(function()
@@ -2135,4 +2170,5 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 -- GUI END
+
 
