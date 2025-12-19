@@ -64,16 +64,11 @@ local _prevGlobalShadows = nil
 local RAKE_METER = {
 	enabled = false,
 	conn = nil,
-	partA = nil, -- player sideS
-	partB = nil, -- rake side
-	beam = nil,
-	billboard = nil,
-	hud = nil,
+	hudGui = nil,
+	label = nil,
 	cachedRake = nil,
 	lastRakeCheck = 0,
 	useBeam = false,
-	rakeAddedConn = nil,
-	rakeRemovedConn = nil,
 }
 
 local function findRakeModel()
@@ -142,211 +137,118 @@ local function formatFriendly(dist)
 	end
 end
 
-local function createRakeWorldParts()
-	if RAKE_METER.partA and RAKE_METER.partA.Parent then return end
-	local pA = Instance.new("Part")
-	pA.Name = "RakeMeter_PlayerPart"
-	pA.Anchored = true
-	pA.CanCollide = false
-	pA.Transparency = 1
-	pA.Size = Vector3.new(0.2,0.2,0.2)
-	pA.Parent = Workspace
-	RAKE_METER.partA = pA
+-- Simple optimized proximity GUI and updater (replaces complex beam/hud parts)
+local function createRakeProximityGui()
+	local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+	-- destroy any existing instance to avoid duplicates
+	local existing = playerGui:FindFirstChild("RakeProximityGui")
+	if existing then existing:Destroy() end
 
-	local pB = Instance.new("Part")
-	pB.Name = "RakeMeter_RakePart"
-	pB.Anchored = true
-	pB.CanCollide = false
-	pB.Transparency = 1
-	pB.Size = Vector3.new(0.2,0.2,0.2)
-	pB.Parent = Workspace
-	RAKE_METER.partB = pB
-
-	local a0 = Instance.new("Attachment")
-	a0.Name = "A0"
-	a0.Parent = pA
-	local a1 = Instance.new("Attachment")
-	a1.Name = "A1"
-	a1.Parent = pB
-
-	local beam = Instance.new("Beam")
-	beam.Name = "RakeMeter_Beam"
-	beam.Attachment0 = a0
-	beam.Attachment1 = a1
-	beam.Width0 = 0.12
-	beam.Width1 = 0.12
-	beam.FaceCamera = true
-	beam.Color = ColorSequence.new(Color3.fromRGB(255,80,80), Color3.fromRGB(255,200,80))
-	beam.LightEmission = 0.35
-	beam.Transparency = NumberSequence.new(0)
-	beam.Parent = pA
-	-- initial enabled state follows the useBeam flag
-	beam.Enabled = RAKE_METER.useBeam or false
-	RAKE_METER.beam = beam
-end
-
-local function destroyRakeWorldParts()
-	pcall(function()
-		if RAKE_METER.beam then RAKE_METER.beam:Destroy() end
-		if RAKE_METER.partA then RAKE_METER.partA:Destroy() end
-		if RAKE_METER.partB then RAKE_METER.partB:Destroy() end
-		RAKE_METER.beam = nil
-		RAKE_METER.partA = nil
-		RAKE_METER.partB = nil
-	end)
-end
-
-
-local function createRakeHUD(screen)
-	-- Create a standalone ScreenGui for the Rake HUD so it's always visible
-	if RAKE_METER.hud and RAKE_METER.hud.frame and RAKE_METER.hud.frame.Parent then return end
-
-	local hudGui = Instance.new("ScreenGui")
-	hudGui.Name = "RakeMeterHUDGui"
-	hudGui.ResetOnSpawn = false
-	hudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	local pg = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui")
-	hudGui.Parent = pg or game:GetService("CoreGui")
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "RakeProximityGui"
+	screenGui.Parent = playerGui
+	screenGui.ResetOnSpawn = false
+	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 	local frame = Instance.new("Frame")
-	frame.Name = "RakeMeterHUD"
-	frame.Size = UDim2.new(0,220,0,48)
-	frame.Position = UDim2.new(1, -240, 0, 8)
-	frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
-	frame.BackgroundTransparency = 0.15
-	frame.Parent = hudGui
-	local corner = Instance.new("UICorner")
-	corner.Parent = frame
+	frame.Name = "ProximityFrame"
+	frame.Parent = screenGui
+	frame.Size = UDim2.new(0, 220, 0, 60)
+	frame.Position = UDim2.new(1, -230, 0, 10)
+	frame.BackgroundColor3 = Color3.new(0.05, 0.05, 0.05)
+	frame.BackgroundTransparency = 0.2
+	frame.BorderSizePixel = 0
 	frame.Active = true
-	-- drag
-	local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
-	frame.InputBegan:Connect(function(inp)
-		if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+	local corner = Instance.new("UICorner") corner.CornerRadius = UDim.new(0,8) corner.Parent = frame
+
+	local statusLabel = Instance.new("TextLabel")
+	statusLabel.Name = "StatusLabel"
+	statusLabel.Parent = frame
+	statusLabel.Size = UDim2.new(1, 0, 1, 0)
+	statusLabel.BackgroundTransparency = 1
+	statusLabel.Text = "Initializing..."
+	statusLabel.TextColor3 = Color3.new(1,1,1)
+	statusLabel.TextScaled = true
+	statusLabel.Font = Enum.Font.SourceSansBold
+
+	-- draggable
+	local dragging = false
+	local dragStart, startPos
+	frame.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
 			dragging = true
-			dragStart = inp.Position
+			dragStart = input.Position
 			startPos = frame.Position
-			inp.Changed:Connect(function()
-				if inp.UserInputState == Enum.UserInputState.End then
-					dragging = false
-				end
-			end)
 		end
 	end)
-	frame.InputChanged:Connect(function(inp)
-		if inp.UserInputType == Enum.UserInputType.MouseMovement then dragInput = inp end
-	end)
-	UserInputService.InputChanged:Connect(function(inp)
-		if inp == dragInput and dragging then
-			local delta = inp.Position - dragStart
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+			local delta = input.Position - dragStart
 			frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
 		end
 	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+	end)
 
-	local label = Instance.new("TextLabel")
-	label.Parent = frame
-	label.Size = UDim2.new(1, -8, 1, -8)
-	label.Position = UDim2.new(0,4,0,4)
-	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.GothamBold
-	label.TextSize = 16
-	label.TextColor3 = Color3.fromRGB(255,255,255)
-	label.Text = "Rake: --"
-	label.TextXAlignment = Enum.TextXAlignment.Left
-
-	RAKE_METER.hud = { frame = frame, label = label }
-	RAKE_METER.hudGui = hudGui
+	RAKE_METER.hudGui = screenGui
+	RAKE_METER.label = statusLabel
 end
 
-local function destroyRakeHUD()
+local function destroyRakeProximityGui()
 	pcall(function()
-		if RAKE_METER.hud and RAKE_METER.hud.frame then RAKE_METER.hud.frame:Destroy() end
 		if RAKE_METER.hudGui then RAKE_METER.hudGui:Destroy() end
 	end)
-	RAKE_METER.hud = nil
 	RAKE_METER.hudGui = nil
+	RAKE_METER.label = nil
 end
 
 local function enableRakeMeter(screen)
 	if RAKE_METER.conn then return end
 	RAKE_METER.enabled = true
-	createRakeWorldParts()
-	createRakeHUD(screen)
-	RAKE_METER.conn = RunService.RenderStepped:Connect(function()
+	createRakeProximityGui()
+
+	RAKE_METER.conn = RunService.Heartbeat:Connect(function()
 		pcall(function()
 			local char = LocalPlayer and LocalPlayer.Character
 			local hrp = char and (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart)
 			if not hrp then
-				if RAKE_METER.hud then RAKE_METER.hud.label.Text = "Rake: no character" end
-				if RAKE_METER.beam then RAKE_METER.beam.Enabled = false end
+				if RAKE_METER.label then RAKE_METER.label.Text = "Rake: no character" RAKE_METER.label.TextColor3 = Color3.fromRGB(128,128,128) end
 				return
 			end
-			local rake = findRakeModel()
-			-- use cached getter to avoid scanning Workspace every frame
-			local rake = getCachedRake(0.25)
+
+			local rake = getCachedRake(0.25) or findRakeModel()
 			if not rake then
-				if RAKE_METER.hud then RAKE_METER.hud.label.Text = "Rake: not found" end
-				if RAKE_METER.partA then RAKE_METER.partA.Transparency = 1 end
-				if RAKE_METER.partB then RAKE_METER.partB.Transparency = 1 end
-				if RAKE_METER.beam then RAKE_METER.beam.Enabled = false end
+				if RAKE_METER.label then RAKE_METER.label.Text = "Rake Not Found" RAKE_METER.label.TextColor3 = Color3.fromRGB(128,128,128) end
 				return
 			end
+
 			local rakeRoot = rake:FindFirstChild("HumanoidRootPart") or rake.PrimaryPart or rake:FindFirstChildWhichIsA("BasePart")
 			if not rakeRoot then return end
-			local dist = (hrp.Position - rakeRoot.Position).Magnitude
-			if RAKE_METER.hud then
-				RAKE_METER.hud.label.Text = string.format("Rake: %s — %.1fm", formatFriendly(dist), dist)
+			local dist = (rakeRoot.Position - hrp.Position).Magnitude
+
+			-- status and color mapping (kept similar to original formatting)
+			local status, color
+			if dist <= 50 then
+				status = "VERY CLOSE"
+				color = Color3.new(1,0,0)
+			elseif dist <= 150 then
+				status = "CLOSE"
+				color = Color3.new(1,0.5,0)
+			elseif dist <= 300 then
+				status = "FAR"
+				color = Color3.new(1,1,0)
+			else
+				status = "SAFE"
+				color = Color3.new(0,1,0)
 			end
-			-- update world parts positions every frame so beam follows reliably
-			if RAKE_METER.partA then
-				RAKE_METER.partA.Position = hrp.Position
-				RAKE_METER.partA.Transparency = 1
-			end
-			if RAKE_METER.partB then
-				RAKE_METER.partB.Position = rakeRoot.Position + Vector3.new(0, 1.5, 0)
-				RAKE_METER.partB.Transparency = 1
-			end
-			if RAKE_METER.beam then
-				RAKE_METER.beam.Enabled = RAKE_METER.useBeam or false
+
+			if RAKE_METER.label then
+				RAKE_METER.label.Text = string.format("%s — %.1fm", status, dist)
+				RAKE_METER.label.TextColor3 = color
 			end
 		end)
 	end)
-
-	-- listen for rake spawn/despawn so cachedRake updates immediately
-	if not RAKE_METER.rakeAddedConn then
-		RAKE_METER.rakeAddedConn = Workspace.DescendantAdded:Connect(function(inst)
-			if not inst then return end
-			local model = nil
-			if inst:IsA("Model") then
-				model = inst
-			else
-				model = inst:FindFirstAncestorOfClass("Model")
-			end
-			if not model then return end
-			local ok, nm = pcall(function() return tostring(model.Name) end)
-			local isTagged = model:FindFirstChild("ESP_Category") and model:FindFirstChild("ESP_Category").Value == "rake"
-			if isTagged or (ok and nm and nm:lower():find("rake")) then
-				RAKE_METER.cachedRake = model
-				-- immediate visual update
-				local rakeRoot = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
-				if rakeRoot and RAKE_METER.partB then
-					RAKE_METER.partB.Position = rakeRoot.Position + Vector3.new(0,1.5,0)
-					if RAKE_METER.beam then RAKE_METER.beam.Enabled = RAKE_METER.useBeam or false end
-				end
-			end
-		end)
-	end
-	if not RAKE_METER.rakeRemovedConn then
-		RAKE_METER.rakeRemovedConn = Workspace.DescendantRemoving:Connect(function(inst)
-			if not inst then return end
-			-- if the cached rake or one of its descendants is removed, clear cache
-			if RAKE_METER.cachedRake then
-				if inst == RAKE_METER.cachedRake or inst:IsDescendantOf(RAKE_METER.cachedRake) then
-					RAKE_METER.cachedRake = nil
-					if RAKE_METER.beam then RAKE_METER.beam.Enabled = false end
-				end
-			end
-		end)
-	end
 end
 
 local function disableRakeMeter()
@@ -355,16 +257,7 @@ local function disableRakeMeter()
 		RAKE_METER.conn:Disconnect()
 		RAKE_METER.conn = nil
 	end
-	if RAKE_METER.rakeAddedConn then
-		RAKE_METER.rakeAddedConn:Disconnect()
-		RAKE_METER.rakeAddedConn = nil
-	end
-	if RAKE_METER.rakeRemovedConn then
-		RAKE_METER.rakeRemovedConn:Disconnect()
-		RAKE_METER.rakeRemovedConn = nil
-	end
-	destroyRakeWorldParts()
-	destroyRakeHUD()
+	destroyRakeProximityGui()
 end
 
 -- Player handling
@@ -2242,3 +2135,4 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 -- GUI END
+
