@@ -712,6 +712,8 @@ local function createESPGui()
 	local loadedSettings = nil
 
 	local OBJECT_FINDER = { enabled = false }
+	local TRAP_DETECTOR = { enabled = false, isBeta = true }
+	local shouldEnableTrapDetector = false
 
 	local function saveSettings(settings)
 		local data = settings or {
@@ -726,6 +728,7 @@ local function createESPGui()
 			rakeMeterEnabled = RAKE_METER.enabled or false,
 			useBeamMeter = RAKE_METER.useBeam or false,
 			objectFinderEnabled = (OBJECT_FINDER and OBJECT_FINDER.enabled) or false,
+			trapDetectorEnabled = (TRAP_DETECTOR and TRAP_DETECTOR.enabled) or false,
 			improvedLighting = IMPROVED_LIGHTING_ENABLED or false,
 
 			-- improvedLightingIntensity removed
@@ -1034,6 +1037,9 @@ local function createESPGui()
 				end
 				if s.improvedLighting ~= nil then
 					IMPROVED_LIGHTING_ENABLED = s.improvedLighting
+				end
+				if s.trapDetectorEnabled then
+					shouldEnableTrapDetector = true
 				end
 				-- improvedLightingIntensity removed from config
 			if s.locationSettings then
@@ -2706,9 +2712,166 @@ local function createESPGui()
 	end)
 	objFinderToggle.Position = UDim2.new(0, 8, 0, 92)
 
+	local function modelHasPhysicalPart(root)
+		if not root then return false end
+		if root:IsA("BasePart") then
+			local sz = root.Size and root.Size.Magnitude or 0
+			if sz > 0.05 and (root.Transparency < 0.95 or root.CanCollide) then return true end
+			return false
+		end
+		if root:IsA("Model") then
+			for _, d in ipairs(root:GetDescendants()) do
+				if d:IsA("BasePart") then
+					local sz = d.Size and d.Size.Magnitude or 0
+					if sz > 0.05 and (d.Transparency < 0.95 or d.CanCollide) then
+						return true
+					end
+				end
+			end
+		end
+		return false
+	end
+
+	local function getTrapModelRoot(inst)
+		if not inst or not inst.Parent then return nil end
+		if inst:IsA("BasePart") and inst.Parent and inst.Parent:IsA("Model") then
+			return inst.Parent
+		elseif inst:IsA("Model") then
+			local part = inst.PrimaryPart or inst:FindFirstChildWhichIsA("BasePart")
+			if part then return inst end
+			return nil
+		elseif inst.Parent and inst.Parent:IsA("Model") then
+			local m = inst.Parent
+			local p = m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart")
+			if p then return m end
+		end
+		return nil
+	end
+
+	local function createTrapTag(root, adornPart, labelText, accentColor)
+		if not SCREEN_GUI then return nil end
+		local billboard = Instance.new("BillboardGui")
+		billboard.Name = "TrapNameTag"
+		billboard.Adornee = adornPart or root
+		billboard.Size = UDim2.new(0, 140, 0, 26)
+		billboard.StudsOffsetWorldSpace = Vector3.new(0, 2.4, 0)
+		billboard.AlwaysOnTop = true
+		billboard.Parent = SCREEN_GUI
+
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.new(1, 0, 1, 0)
+		label.BackgroundTransparency = 1
+		label.Text = labelText or "Trap"
+		label.TextColor3 = Color3.fromRGB(240,240,240)
+		label.TextScaled = false
+		label.TextSize = 14
+		label.Font = Enum.Font.GothamBold
+		label.TextStrokeTransparency = 0.8
+		label.Parent = billboard
+
+		local accent = Instance.new("Frame")
+		accent.Size = UDim2.new(0, 6, 1, -8)
+		accent.Position = UDim2.new(0, 6, 0, 4)
+		accent.BackgroundColor3 = accentColor or Color3.fromRGB(255,80,80)
+		accent.BorderSizePixel = 0
+		accent.Parent = billboard
+
+		return billboard
+	end
+
+	local function enableTrapDetector()
+		if TRAP_DETECTOR and TRAP_DETECTOR.conn then return end
+		TRAP_DETECTOR.enabled = true
+		TRAP_DETECTOR.tracked = {}
+
+		local function process(inst)
+			local root = getTrapModelRoot(inst)
+			if not root then return end
+			local name = (root.Name or ""):lower()
+			if not string.find(name, "trap", 1, true) then return end
+			if TRAP_DETECTOR.tracked[root] then return end
+			if not modelHasPhysicalPart(root) then return end
+			local isRusty = string.find(name, "rusty", 1, true) ~= nil
+			local color = isRusty and Color3.fromRGB(160,90,20) or Color3.fromRGB(255,80,80)
+			local adorn = root.PrimaryPart or root:FindFirstChildWhichIsA("BasePart") or root
+			local ok, h = pcall(function()
+				local hl = Instance.new("Highlight")
+				hl.Adornee = root
+				hl.FillTransparency = 0.7
+				hl.FillColor = color
+				hl.OutlineTransparency = 0
+				hl.OutlineColor = Color3.fromRGB(255,255,255)
+				hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+				hl.Parent = root
+				return hl
+			end)
+			local tag = nil
+			pcall(function() tag = createTrapTag(root, adorn, isRusty and "Rusty Trap" or "Trap", color) end)
+			TRAP_DETECTOR.tracked[root] = { highlight = ok and h or nil, nameTag = tag }
+		end
+
+		-- initial scan
+		for _, d in ipairs(Workspace:GetDescendants()) do
+			pcall(function() process(d) end)
+		end
+
+		TRAP_DETECTOR.connections = {}
+		TRAP_DETECTOR.connections.add = Workspace.DescendantAdded:Connect(function(inst) pcall(function() process(inst) end) end)
+		TRAP_DETECTOR.connections.remove = Workspace.DescendantRemoving:Connect(function(inst)
+			for k,_ in pairs(TRAP_DETECTOR.tracked) do
+				if not k or not k.Parent then
+					local td = TRAP_DETECTOR.tracked[k]
+					if td then
+						pcall(function() if td.highlight then td.highlight:Destroy() end end)
+						pcall(function() if td.nameTag then td.nameTag:Destroy() end end)
+					end
+					TRAP_DETECTOR.tracked[k] = nil
+				end
+			end
+		end)
+		TRAP_DETECTOR.conn = RunService.Heartbeat:Connect(function()
+			for obj, td in pairs(TRAP_DETECTOR.tracked) do
+				if not obj or not obj.Parent then
+					pcall(function() if td.highlight then td.highlight:Destroy() end end)
+					pcall(function() if td.nameTag then td.nameTag:Destroy() end end)
+					TRAP_DETECTOR.tracked[obj] = nil
+				end
+			end
+		end)
+	end
+
+	local function disableTrapDetector()
+		TRAP_DETECTOR.enabled = false
+		if TRAP_DETECTOR.conn then TRAP_DETECTOR.conn:Disconnect() TRAP_DETECTOR.conn = nil end
+		for k, c in pairs(TRAP_DETECTOR.connections or {}) do pcall(function() if c and c.Disconnect then c:Disconnect() end end) end
+		for k, td in pairs(TRAP_DETECTOR.tracked or {}) do
+			pcall(function() if td.highlight then td.highlight:Destroy() end end)
+			pcall(function() if td.nameTag then td.nameTag:Destroy() end end)
+			TRAP_DETECTOR.tracked[k] = nil
+		end
+		TRAP_DETECTOR.connections = {}
+	end
+
+	local trapToggle = makeToggle(rakeGroup, "Trap Detector", shouldEnableTrapDetector, function(v)
+		TRAP_DETECTOR.enabled = v
+		if v then
+			pcall(function() enableTrapDetector() end)
+			if TRAP_DETECTOR.isBeta then showBetaNoticeOnce() end
+		else
+			pcall(function() disableTrapDetector() end)
+		end
+		saveSettings()
+	end)
+	trapToggle.Position = UDim2.new(0, 8, 0, 132)
+
 	-- If loaded settings requested Object Finder enabled, enable it now
 	if shouldEnableObjectFinder then
 		pcall(function() enableObjectFinder() end)
+	end
+
+	-- If loaded settings requested Trap Detector enabled, enable it now
+	if shouldEnableTrapDetector then
+		pcall(function() enableTrapDetector() end)
 	end
 
 	-- Active section handling: move button up and change text color
