@@ -1342,11 +1342,20 @@ local function createESPGui()
 					_G._POWER_WATCHER = nil
 				end
 			end)
+			-- stop FOV enforce if present
+			pcall(function() if stopFovEnforce then pcall(stopFovEnforce) end end)
 			-- stop day/night watcher if present
 			pcall(function()
 				if _G and _G._DAY_TIMER and _G._DAY_TIMER.stop then
 					pcall(_G._DAY_TIMER.stop)
 					_G._DAY_TIMER = nil
+				end
+			end)
+			-- stop trapless watcher if present
+			pcall(function()
+				if _G and _G._TRAPLESS and _G._TRAPLESS.stop then
+					pcall(_G._TRAPLESS.stop)
+					_G._TRAPLESS = nil
 				end
 			end)
 
@@ -1613,7 +1622,8 @@ local function createESPGui()
 		"Tip 3. Use the highlights (ESP) to find out where Rake and other players are.",
 		"Tip 4. Use the object finder to locate important items in the game world.",
 		"Tip 5. This game doesn't have an actual proper anti-cheat lol.",
-		"Tip 6. Join my Discord server for updates on this script, and other useful apps. Press the button below to get invited."
+		"Tip 6. SH Bypass and TD Bypass is \"Safe House Door Bypass\" and \"Tower Door Bypass\" nice to know right?",
+		"Tip 7. Join my Discord server for updates on this script, and other useful apps. Press the button below to get invited."
 	}
 
 
@@ -2076,8 +2086,48 @@ local function createESPGui()
 		return frame, btn, label
 	end
 
+	-- Notification helper: top-middle notification, dark grey background, white text, auto-destroy after 3s
+	local function makeNotification(text)
+		local parentGui = SCREEN_GUI or (LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui")) or game:GetService("CoreGui")
+		if not parentGui then return end
+		local name = "RakeNotificationGui"
+		pcall(function()
+			local existing = parentGui:FindFirstChild(name)
+			if existing then existing:Destroy() end
+		end)
+		local sg = Instance.new("ScreenGui")
+		sg.Name = name
+		sg.ResetOnSpawn = false
+		sg.DisplayOrder = 2000
+		sg.Parent = parentGui
+		local notif = Instance.new("Frame")
+		notif.Name = "Notification"
+		notif.Size = UDim2.new(0, 420, 0, 40)
+		notif.Position = UDim2.new(0.5, -210, 0, 8)
+		notif.AnchorPoint = Vector2.new(0,0)
+		notif.BackgroundColor3 = Color3.fromRGB(24,24,28)
+		notif.BackgroundTransparency = 0
+		notif.ZIndex = 2000
+		notif.Parent = sg
+		local corner = Instance.new("UICorner") corner.CornerRadius = UDim.new(0,8) corner.Parent = notif
+		local msg = Instance.new("TextLabel")
+		msg.Size = UDim2.new(1, -16, 1, 0)
+		msg.Position = UDim2.new(0, 8, 0, 0)
+		msg.BackgroundTransparency = 1
+		msg.Font = Enum.Font.GothamBold
+		msg.TextSize = 14
+		msg.TextColor3 = Color3.fromRGB(255,255,255)
+		msg.ZIndex = 2001
+		msg.Text = text or ""
+		msg.TextXAlignment = Enum.TextXAlignment.Left
+		msg.TextYAlignment = Enum.TextYAlignment.Center
+		msg.Parent = notif
+		task.delay(3, function() pcall(function() if sg and sg.Parent then sg:Destroy() end end) end)
+	end
+
 	-- Button helper: similar layout to makeToggle but a single action button
-	local function makeButton(parent, title, onClick)
+	-- optional fourth argument `stay` when true prevents the control from being destroyed after click
+	local function makeButton(parent, title, onClick, stay)
 		local frame = Instance.new("Frame")
 		frame.Size = UDim2.new(1, -16, 0, 32)
 		frame.Position = UDim2.new(0, 8, 0, 0)
@@ -2107,9 +2157,10 @@ local function createESPGui()
 		btn.Parent = frame
 
 		btn.MouseButton1Click:Connect(function()
-			-- run provided callback, then remove this control once
+			-- run provided callback
 			pcall(onClick)
-			pcall(function() if frame and frame.Destroy then frame:Destroy() end end)
+			-- destroy only if not told to stay
+			if not stay then pcall(function() if frame and frame.Destroy then frame:Destroy() end end) end
 		end)
 
 		return frame, btn, label
@@ -2486,6 +2537,78 @@ spawn(function()
 	_G._DAY_TIMER.stop = stopDayWatcher
 end)
 
+-- Trapless implementation: removes HitBox under traps in workspace.Debris.Traps
+spawn(function()
+	local RunService = game:GetService("RunService")
+	local workspaceRef = workspace
+
+	local trapsRoot = nil
+	local heartbeatConn = nil
+	local descendantConn = nil
+
+	local function findTrapsRoot()
+		local debris = workspaceRef:FindFirstChild("Debris")
+		if debris then return debris:FindFirstChild("Traps") end
+		return nil
+	end
+
+	local function cleanTrapModel(trapModel)
+		if not trapModel then return end
+		pcall(function()
+			local hb = trapModel:FindFirstChild("HitBox", true)
+			if hb and hb.Parent then pcall(function() hb:Destroy() end) end
+		end)
+	end
+
+	local function scanAll()
+		trapsRoot = findTrapsRoot()
+		if not trapsRoot then return end
+		for _, trap in ipairs(trapsRoot:GetChildren()) do
+			if trap and trap.Name == "RakeTrapModel" then
+				cleanTrapModel(trap)
+			else
+				local rake = trap:FindFirstChild("RakeTrapModel", true)
+				if rake then cleanTrapModel(rake) end
+			end
+		end
+	end
+
+	local function onDescendantAdded(inst)
+		if not inst then return end
+		if tostring(inst.Name):lower() == "hitbox" then
+			local cur = inst
+			local found = false
+			while cur and cur.Parent do
+				if cur.Name == "RakeTrapModel" then found = true break end
+				cur = cur.Parent
+			end
+			if found then pcall(function() inst:Destroy() end) end
+		end
+	end
+
+	local function startTrapless()
+		if heartbeatConn then return end
+		scanAll()
+		heartbeatConn = RunService.Heartbeat:Connect(function()
+			scanAll()
+		end)
+		trapsRoot = findTrapsRoot()
+		if trapsRoot then
+			descendantConn = trapsRoot.DescendantAdded:Connect(onDescendantAdded)
+		end
+	end
+
+	local function stopTrapless()
+		if heartbeatConn then pcall(function() heartbeatConn:Disconnect() end) heartbeatConn = nil end
+		if descendantConn then pcall(function() descendantConn:Disconnect() end) descendantConn = nil end
+		trapsRoot = nil
+	end
+
+	_G._TRAPLESS = _G._TRAPLESS or {}
+	_G._TRAPLESS.start = startTrapless
+	_G._TRAPLESS.stop = stopTrapless
+end)
+
 
 
 	-- Ensure Game left column and divider exist, then add Power Level Stat toggle
@@ -2575,6 +2698,21 @@ end)
 			end) end
 		end)
 
+		-- Add Safe House Bypass button (persists, applies settings each press)
+		pcall(function()
+			local parentCol = gameSection:FindFirstChild("GameLeftCol")
+			if not parentCol then
+				parentCol = Instance.new("Frame")
+				parentCol.Name = "GameLeftCol"
+				parentCol.Size = UDim2.new(0.55, -8, 1, -8)
+				parentCol.Position = UDim2.new(0, 8, 0, 8)
+				parentCol.BackgroundTransparency = 1
+				parentCol.Parent = gameSection
+			end
+
+            
+		end)
+
 		-- Add Fall Damage button (one-shot delete of FD_Event in ReplicatedStorage)
 		pcall(function()
 			local btnFrame, btn, lbl = makeButton(parentCol, "Fall Damage", function()
@@ -2627,7 +2765,160 @@ end)
 			end)
 			if btnFrame and btnFrame:IsA("Instance") then btnFrame.Position = UDim2.new(0,8,0,104) end
 		end)
-	end)
+		end)
+
+			pcall(function()
+				local parentCol = gameSection:FindFirstChild("GameLeftCol")
+				if not parentCol then
+					parentCol = Instance.new("Frame")
+					parentCol.Name = "GameLeftCol"
+					parentCol.Size = UDim2.new(0.55, -8, 1, -8)
+					parentCol.Position = UDim2.new(0, 8, 0, 8)
+					parentCol.BackgroundTransparency = 1
+					parentCol.Parent = gameSection
+				end
+
+				local initialT = false
+				pcall(function()
+					initialT = LocalPlayer:GetAttribute("Rake_TraplessEnabled") or (loadedSettings and loadedSettings.TraplessEnabled) or false
+				end)
+
+				local tgl = makeToggle(parentCol, "Remove Trap Hitbox", initialT, function(v)
+					pcall(function() LocalPlayer:SetAttribute("Rake_TraplessEnabled", v) end)
+					if loadedSettings then loadedSettings.TraplessEnabled = v; pcall(saveSettings, loadedSettings) end
+					if v then pcall(function() if _G and _G._TRAPLESS and _G._TRAPLESS.start then _G._TRAPLESS.start() end end)
+					else pcall(function() if _G and _G._TRAPLESS and _G._TRAPLESS.stop then _G._TRAPLESS.stop() end end)
+					end
+				end)
+
+				if tgl and tgl:IsA("Instance") then
+					-- prefer LayoutOrder where available, but also set a safe Position
+					pcall(function() tgl.LayoutOrder = 50 end)
+					tgl.Position = UDim2.new(0,8,0,140)
+				end
+
+				if initialT then spawn(function()
+					local tries = 0
+					while tries < 100 and (not _G or not _G._TRAPLESS or not _G._TRAPLESS.start) do task.wait(0.05); tries = tries + 1 end
+					pcall(function() if _G and _G._TRAPLESS and _G._TRAPLESS.start then _G._TRAPLESS.start() end end)
+				end) end
+			end)
+
+			-- Add Safe House Bypass button (persistent) after Trapless toggle
+			pcall(function()
+				local parentCol = gameSection:FindFirstChild("GameLeftCol")
+				if not parentCol then
+					parentCol = Instance.new("Frame")
+					parentCol.Name = "GameLeftCol"
+					parentCol.Size = UDim2.new(0.55, -8, 1, -8)
+					parentCol.Position = UDim2.new(0, 8, 0, 8)
+					parentCol.BackgroundTransparency = 1
+					parentCol.Parent = gameSection
+				end
+
+				local function applySHBypass()
+					-- show immediate feedback so clicks are visible
+					pcall(function() makeNotification("Applying SH bypass...") end)
+					local prompt = nil
+					pcall(function()
+						local m = Workspace and Workspace:FindFirstChild("Map") or nil
+						if m then
+							local sh = m:FindFirstChild("SafeHouse")
+							if sh then
+								local door = sh:FindFirstChild("Door")
+								if door then
+									local lever = door:FindFirstChild("DoorLever")
+									if lever then
+										local guipart = lever:FindFirstChild("DoorGUIPart")
+										if guipart then
+											prompt = guipart:FindFirstChild("ProximityPrompt")
+										end
+									end
+								end
+							end
+						end
+					end)
+
+					if prompt and prompt:IsA("ProximityPrompt") then
+						-- read properties safely
+						local okReq, curReq = pcall(function() return prompt.RequiresLineOfSight end)
+						local okMax, curMax = pcall(function() return prompt.MaxActivationDistance end)
+						local okInd, curInd = pcall(function() return prompt.MaxIndicatorDistance end)
+
+						local already = (okReq and curReq == false) and (okMax and curMax == 20) and (okInd and curInd == 20)
+						if not already then
+							pcall(function()
+								pcall(function() prompt.RequiresLineOfSight = false end)
+								pcall(function() prompt.MaxActivationDistance = 20 end)
+								pcall(function() prompt.MaxIndicatorDistance = 20 end)
+							end)
+							pcall(function() makeNotification("Done! You can freely open the safe house door now.") end)
+						else
+							pcall(function() makeNotification("Safe house already bypassed.") end)
+						end
+					else
+						pcall(function() makeNotification("Safe house prompt not found.") end)
+					end
+				end
+
+				local frame, btn, lbl = makeButton(parentCol, "SH Bypass", function()
+					applySHBypass()
+				end, true)
+				if frame and frame:IsA("Instance") then frame.Position = UDim2.new(0,8,0,180) end
+			end)
+
+			-- Add TD Bypass button (Observation Tower) — same behavior as SH Bypass
+			pcall(function()
+				local parentCol = gameSection:FindFirstChild("GameLeftCol")
+				if not parentCol then return end
+
+				local function applyTDBypass()
+					pcall(function() makeNotification("Applying TD bypass...") end)
+					local prompt = nil
+					pcall(function()
+						local m = Workspace and Workspace:FindFirstChild("Map") or nil
+						if m then
+							local ot = m:FindFirstChild("ObservationTower")
+							if ot then
+								local door = ot:FindFirstChild("Door")
+								if door then
+									local lever = door:FindFirstChild("DoorLever2")
+									if lever then
+										local guipart = lever:FindFirstChild("DoorGUIPart2")
+											if guipart then
+												prompt = guipart:FindFirstChild("ProximityPrompt")
+											end
+										end
+									end
+								end
+							end
+						end)
+
+					if prompt and prompt:IsA("ProximityPrompt") then
+						local okReq, curReq = pcall(function() return prompt.RequiresLineOfSight end)
+						local okMax, curMax = pcall(function() return prompt.MaxActivationDistance end)
+						local okInd, curInd = pcall(function() return prompt.MaxIndicatorDistance end)
+						local already = (okReq and curReq == false) and (okMax and curMax == 20) and (okInd and curInd == 20)
+						if not already then
+							pcall(function()
+								pcall(function() prompt.RequiresLineOfSight = false end)
+								pcall(function() prompt.MaxActivationDistance = 20 end)
+								pcall(function() prompt.MaxIndicatorDistance = 20 end)
+							end)
+							pcall(function() makeNotification("Done! You can freely open the tower door now.") end)
+						else
+							pcall(function() makeNotification("Observation Tower already bypassed.") end)
+						end
+					else
+						pcall(function() makeNotification("Observation Tower prompt not found.") end)
+					end
+				end
+
+				local f, b = makeButton(parentCol, "TD Bypass", function()
+					applyTDBypass()
+				end, true)
+				if f and f:IsA("Instance") then f.Position = UDim2.new(0,8,0,220) end
+			end)
 
 		local rakeHeader = Instance.new("TextLabel")
 		rakeHeader.Size = UDim2.new(1, 0, 0, 24)
@@ -2948,7 +3239,7 @@ end)
 	end
 	local function startFovEnforce()
 		stopFovEnforce()
-		fovEnforceConn = RunService.RenderStepped:Connect(function()
+		fovEnforceConn = RunService.Heartbeat:Connect(function()
 			local cam = workspace.CurrentCamera
 			if cam and currentFov then
 				if cam.FieldOfView ~= currentFov then
