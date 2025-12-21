@@ -1,5 +1,3 @@
--- Coordonates Inspector (LocalScript)
--- Place in StarterPlayer > StarterPlayerScripts. Press Insert to toggle.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -53,5 +51,6 @@ UserInputService.InputBegan:Connect(function(input, gp)
         screen.Enabled = not screen.Enabled
     end
 end)
+
 
 print("CoordInspector loaded. Press Insert to toggle the coordinates HUD.")
