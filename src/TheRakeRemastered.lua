@@ -6,6 +6,16 @@ local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 
+-- Script active flag and stored connection refs for clean unload
+local SCRIPT_ACTIVE = true
+local workspaceChildAddedConn = nil
+local workspaceDescendantAddedConn = nil
+local workspaceDescendantRemovingConn = nil
+local playersPlayerAddedConn = nil
+local insertToggleConn = nil
+local localPlayerCharAddedConn = nil
+local localPlayerRespawnConn = nil
+
 local Light = game:GetService("Lighting")
 
 function dofullbright()
@@ -609,9 +619,13 @@ local function onPlayer(player)
 end
 
 for _, player in pairs(Players:GetPlayers()) do
-	onPlayer(player)
+	if SCRIPT_ACTIVE then onPlayer(player) end
 end
-Players.PlayerAdded:Connect(onPlayer)
+playersPlayerAddedConn = Players.PlayerAdded:Connect(function(p)
+	if not SCRIPT_ACTIVE then return end
+	onPlayer(p)
+end)
+
 
 -- Global NPC highlighting
 local function isPlayerCharacter(model)
@@ -641,12 +655,16 @@ local function onModelAdded(model)
 		end)
 	end
 end
-Workspace.ChildAdded:Connect(onModelAdded)
+workspaceChildAddedConn = Workspace.ChildAdded:Connect(function(m)
+	if not SCRIPT_ACTIVE then return end
+	onModelAdded(m)
+end)
 for _, child in pairs(Workspace:GetChildren()) do
-	onModelAdded(child)
+	if SCRIPT_ACTIVE then onModelAdded(child) end
 end
 
-Workspace.DescendantAdded:Connect(function(desc)
+workspaceDescendantAddedConn = Workspace.DescendantAdded:Connect(function(desc)
+	if not SCRIPT_ACTIVE then return end
 	if not desc then return end
 	if desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
 		task.defer(function()
@@ -672,7 +690,8 @@ Workspace.DescendantAdded:Connect(function(desc)
 	end
 end)
 
-Workspace.DescendantRemoving:Connect(function(desc)
+workspaceDescendantRemovingConn = Workspace.DescendantRemoving:Connect(function(desc)
+	if not SCRIPT_ACTIVE then return end
 	if not desc then return end
 	local model = nil
 	if desc:IsA("Model") then
@@ -722,6 +741,8 @@ local function createESPGui()
 			pov = LocalPlayer:GetAttribute("Rake_POV") or "Default",
 			playerSpeed = LocalPlayer:GetAttribute("Rake_PlayerSpeed") or 16,
 			playerSpeedEnabled = LocalPlayer:GetAttribute("Rake_PlayerSpeedEnabled") or false,
+			rakeKillKey = LocalPlayer:GetAttribute("Rake_RakeKillKey") or "R",
+			rakeKillAuraEnabled = LocalPlayer:GetAttribute("Rake_RakeKillAuraEnabled") or false,
 			buildingSettings = BUILDING_SETTINGS,
 			locationSettings = LOCATION_SETTINGS,
 				locationTextBackground = LOCATION_TEXT_BG,
@@ -768,6 +789,10 @@ local function createESPGui()
 	local DEFAULT_WALK_SPEED = 16
 	local playerSpeed = LocalPlayer:GetAttribute("Rake_PlayerSpeed") or DEFAULT_WALK_SPEED
 	local playerSpeedEnabled = LocalPlayer:GetAttribute("Rake_PlayerSpeedEnabled") or false
+
+	-- Rake kill-aura defaults (top-level so other code can read updated value)
+	local rakeKillKey = LocalPlayer:GetAttribute("Rake_RakeKillKey") or "R"
+	local rakeKillAuraEnabled = LocalPlayer:GetAttribute("Rake_RakeKillAuraEnabled") or false
 
 	local RunService = game:GetService("RunService")
 
@@ -874,6 +899,7 @@ local function createESPGui()
 
 
 	local cameraLoopConn, mouseConn = nil, nil
+	local rakeKillConn = nil
 	local shiftConnB, shiftConnE = nil, nil
 	local shiftLockActive = false
 	local prevAutoRotate = nil
@@ -1023,6 +1049,20 @@ local function createESPGui()
 				playerSpeed = s.playerSpeed
 				pcall(function() LocalPlayer:SetAttribute("Rake_PlayerSpeed", s.playerSpeed) end)
 			end
+			if s.rakeKillKey then
+				rakeKillKey = s.rakeKillKey
+				pcall(function() LocalPlayer:SetAttribute("Rake_RakeKillKey", s.rakeKillKey) end)
+			end
+			if s.rakeKillAuraEnabled ~= nil then
+				rakeKillAuraEnabled = s.rakeKillAuraEnabled
+				pcall(function() LocalPlayer:SetAttribute("Rake_RakeKillAuraEnabled", s.rakeKillAuraEnabled) end)
+			end
+			if s.rakeKillKey then
+				pcall(function() LocalPlayer:SetAttribute("Rake_RakeKillKey", s.rakeKillKey) end)
+			end
+			if s.rakeKillAuraEnabled ~= nil then
+				pcall(function() LocalPlayer:SetAttribute("Rake_RakeKillAuraEnabled", s.rakeKillAuraEnabled) end)
+			end
 			if s.buildingSettings then
 				for k,v in pairs(s.buildingSettings) do
 					BUILDING_SETTINGS[k] = v
@@ -1166,6 +1206,21 @@ local function createESPGui()
 	playerBtn.TextStrokeTransparency = 1
 	playerBtn.Parent = topBar
 
+	-- Game tab 
+	local gameBtn = Instance.new("TextButton")
+	gameBtn.Name = "GameButton"
+	gameBtn.Size = UDim2.new(0, 100, 1, 0)
+	gameBtn.Position = UDim2.new(0, 332, 0, 0)
+	gameBtn.BackgroundTransparency = 0
+	gameBtn.BackgroundColor3 = Color3.fromRGB(38,38,45)
+	gameBtn.AutoButtonColor = false
+	gameBtn.Text = "Game"
+	gameBtn.TextColor3 = Color3.fromRGB(230,230,235)
+	gameBtn.Font = Enum.Font.GothamBold
+	gameBtn.TextSize = 18
+	gameBtn.TextStrokeTransparency = 1
+	gameBtn.Parent = topBar
+
 	local hbCorner = Instance.new("UICorner")
 	hbCorner.Parent = homeBtn
 	local vbCorner = Instance.new("UICorner")
@@ -1173,7 +1228,6 @@ local function createESPGui()
 	local pbCorner = Instance.new("UICorner")
 	pbCorner.Parent = playerBtn
 
-	-- Add subtle strokes to tabs
 	local function addTabStroke(b)
 		local s = Instance.new("UIStroke")
 		s.Parent = b
@@ -1184,8 +1238,8 @@ local function createESPGui()
 	addTabStroke(homeBtn)
 	addTabStroke(visualsBtn)
 	addTabStroke(playerBtn)
+	addTabStroke(gameBtn)
 
-	-- Add subtle hover animations to tabs (no color changes)
 	local _okTween = false
 	pcall(function() _okTween = (TweenService ~= nil) end)
 	local _tabTweens = {}
@@ -1221,6 +1275,7 @@ local function createESPGui()
 	addTabHover(homeBtn)
 	addTabHover(visualsBtn)
 	addTabHover(playerBtn)
+	addTabHover(gameBtn)
 
 	-- Tab indicator (underlines active tab)
 	local tabIndicator = Instance.new("Frame")
@@ -1235,10 +1290,261 @@ local function createESPGui()
 	tabIndicatorCorner.CornerRadius = UDim.new(0, 4)
 	tabIndicatorCorner.Parent = tabIndicator
 
+	-- Close button (top right pos)
+	local closeBtn = Instance.new("TextButton")
+	closeBtn.Name = "CloseButton"
+	closeBtn.Size = UDim2.new(0, 36, 0, 28)
+	closeBtn.Position = UDim2.new(1, -44, 0, 4)
+	closeBtn.AnchorPoint = Vector2.new(0, 0)
+	closeBtn.BackgroundTransparency = 1
+	closeBtn.Font = Enum.Font.GothamBold
+	closeBtn.TextSize = 18
+	closeBtn.Text = "X"
+	closeBtn.TextColor3 = Color3.fromRGB(255,255,255)
+	closeBtn.TextStrokeTransparency = 1
+	closeBtn.Parent = topBar
+
+	closeBtn.MouseEnter:Connect(function()
+		pcall(function() closeBtn.TextColor3 = Color3.fromRGB(255,80,80) end)
+	end)
+	closeBtn.MouseLeave:Connect(function()
+		pcall(function() closeBtn.TextColor3 = Color3.fromRGB(255,255,255) end)
+	end)
+
+	-- Unload
+	local function unloadScript()
+		pcall(function()
+			SCRIPT_ACTIVE = false
+			-- stop local enforced systems
+			pcall(stopSpeedEnforce)
+			pcall(stopCameraLoop)
+			-- disable feature modules first
+			pcall(function() if OBJECT_FINDER and OBJECT_FINDER.enabled then disableObjectFinder() end end)
+			pcall(function() if TRAP_DETECTOR and TRAP_DETECTOR.enabled then disableTrapDetector() end end)
+			-- disable meters/markers created by the script
+			pcall(disableRakeMeter)
+			pcall(disableLocationMarkers)
+			pcall(destroyRakeProximityGui)
+			-- unbind any ContextActionService
+			local CAS = game:GetService("ContextActionService")
+			pcall(function() CAS:UnbindAction("RakeKillToggleAction") end)
+			-- disconnect stored global connections
+			pcall(function()
+				if playersPlayerAddedConn then playersPlayerAddedConn:Disconnect() playersPlayerAddedConn = nil end
+				if workspaceChildAddedConn then workspaceChildAddedConn:Disconnect() workspaceChildAddedConn = nil end
+				if workspaceDescendantAddedConn then workspaceDescendantAddedConn:Disconnect() workspaceDescendantAddedConn = nil end
+				if workspaceDescendantRemovingConn then workspaceDescendantRemovingConn:Disconnect() workspaceDescendantRemovingConn = nil end
+			end)
+			-- stop power watcher if present
+			pcall(function()
+				if _G and _G._POWER_WATCHER and _G._POWER_WATCHER.stop then
+					pcall(_G._POWER_WATCHER.stop)
+					_G._POWER_WATCHER = nil
+				end
+			end)
+			-- stop day/night watcher if present
+			pcall(function()
+				if _G and _G._DAY_TIMER and _G._DAY_TIMER.stop then
+					pcall(_G._DAY_TIMER.stop)
+					_G._DAY_TIMER = nil
+				end
+			end)
+
+			pcall(function() if rakeKillConn then rakeKillConn:Disconnect() rakeKillConn = nil end end)
+			pcall(function()
+				if OBJECT_FINDER and OBJECT_FINDER.connections then
+					for _,c in pairs(OBJECT_FINDER.connections) do pcall(function() if c and c.Disconnect then c:Disconnect() end end) end
+				end
+				if TRAP_DETECTOR and TRAP_DETECTOR.connections then
+					for _,c in pairs(TRAP_DETECTOR.connections) do pcall(function() if c and c.Disconnect then c:Disconnect() end end) end
+				end
+			end)
+			-- remove highlights, name tags, and category tags
+			pcall(function()
+				for _,inst in pairs(Workspace:GetDescendants()) do
+					-- remove ESP highlights/name tags/categories by name
+					if inst and (inst.Name == "ESP_Highlight" or inst.Name == "ESP_Name" or inst.Name == "ESP_Category") then
+						pcall(function() inst:Destroy() end)
+					end
+					-- destroy other highlights created by features (heuristic)
+					if inst and inst:IsA("Highlight") then
+						local ok, ft, dm = pcall(function() return inst.FillTransparency, inst.DepthMode end)
+						if ok and (ft == 0.8 or ft == 0.7 or dm == Enum.HighlightDepthMode.AlwaysOnTop) then
+							pcall(function() inst:Destroy() end)
+						end
+					end
+					-- destroy cluster/world parts created by object finder
+					if inst and inst.Name == "ObjectClusterPart" then
+						pcall(function() inst:Destroy() end)
+					end
+					-- remove location world parts
+					if inst and inst:IsA("BasePart") and tostring(inst.Name):sub(1,8) == "LocPart_" then
+						inst:Destroy()
+					end
+				end
+			end)
+			-- destroy any remaining ScreenGuis created by this script
+			pcall(function()
+				local pg = LocalPlayer:FindFirstChild("PlayerGui")
+				if pg then
+					for _,g in pairs(pg:GetChildren()) do
+						if g:IsA("ScreenGui") then
+							local n = tostring(g.Name)
+							if n:match("Rake") or n:match("CloseConfirmOverlay") then
+								g:Destroy()
+							end
+						end
+					end
+				end
+			end)
+			-- also destroy the main SCREEN_GUI 
+			pcall(function()
+				if SCREEN_GUI then
+					if SCREEN_GUI.Parent then
+						SCREEN_GUI:Destroy()
+					end
+					SCREEN_GUI = nil
+				end
+				-- remove any similarly named guis in CoreGui just in case
+				local cg = game:GetService("CoreGui")
+				for _,g in pairs(cg:GetChildren()) do
+					if g:IsA("ScreenGui") then
+						local n = tostring(g.Name)
+						if n:match("Rake") or n:match("CloseConfirmOverlay") then
+							pcall(function() g:Destroy() end)
+						end
+					end
+				end
+			end)
+			-- ensure any NameTag/ClusterTag/TrapNameTag billboards under PlayerGui/CoreGui are removed
+			pcall(function()
+				local function removeBillboards(parent)
+					for _,c in pairs(parent:GetDescendants()) do
+						if c and c:IsA("BillboardGui") and (c.Name == "NameTag" or c.Name == "ClusterTag" or c.Name == "TrapNameTag") then
+							pcall(function() c:Destroy() end)
+						end
+					end
+				end
+				local pg = LocalPlayer:FindFirstChild("PlayerGui")
+				if pg then removeBillboards(pg) end
+				local cg = game:GetService("CoreGui")
+				if cg then removeBillboards(cg) end
+			end)
+
+			-- ensure player-specific ESP artifacts are removed
+			pcall(function()
+				for _,pl in pairs(Players:GetPlayers()) do
+					local ch = pl.Character
+					if ch then
+						-- remove named children
+						for _,n in pairs({"ESP_Highlight","ESP_Name","ESP_Category"}) do
+							local inst = ch:FindFirstChild(n)
+							if inst then pcall(function() inst:Destroy() end) end
+						end
+						-- remove Highlight instances adorning this character
+						for _,h in pairs(ch:GetDescendants()) do
+							if h and h:IsA("Highlight") then pcall(function() h:Destroy() end) end
+						end
+					end
+				end
+				-- also remove Highlights in workspace that adorn player models
+				for _,inst in pairs(Workspace:GetDescendants()) do
+					if inst and inst:IsA("Highlight") then
+						local ok, ad = pcall(function() return inst.Adornee end)
+						if ok and ad and ad:IsA("Model") then
+							local player = Players:GetPlayerFromCharacter(ad)
+							if player then pcall(function() inst:Destroy() end) end
+						end
+					end
+				end
+			end)
+			-- disconnect remaining anonymous connections
+			pcall(function()
+				if insertToggleConn then insertToggleConn:Disconnect() insertToggleConn = nil end
+				if localPlayerCharAddedConn then localPlayerCharAddedConn:Disconnect() localPlayerCharAddedConn = nil end
+				if localPlayerRespawnConn then localPlayerRespawnConn:Disconnect() localPlayerRespawnConn = nil end
+			end)
+			-- disable improved lighting listener
+			pcall(function() disableImprovedLighting() end)
+			-- attempt to clear attributes
+			pcall(function()
+				LocalPlayer:SetAttribute("RakeSettings", nil)
+			end)
+		end)
+	end
+
+	-- Confirmation modal creator
+	local function showCloseConfirmation()
+		local overlay = Instance.new("Frame")
+		overlay.Name = "CloseConfirmOverlay"
+		overlay.Size = UDim2.fromScale(1, 1)
+		overlay.Position = UDim2.new(0, 0)
+		overlay.BackgroundColor3 = Color3.fromRGB(0,0,0)
+		overlay.BackgroundTransparency = 0.5
+		overlay.ZIndex = 999
+		overlay.Parent = SCREEN_GUI
+
+		local box = Instance.new("Frame")
+		box.Size = UDim2.new(0, 420, 0, 140)
+		box.Position = UDim2.new(0.5, -210, 0.5, -70)
+		box.BackgroundColor3 = Color3.fromRGB(28,28,32)
+		box.ZIndex = 1000
+		box.Parent = overlay
+
+		local corner = Instance.new("UICorner") corner.CornerRadius = UDim.new(0,8) corner.Parent = box
+
+		local msg = Instance.new("TextLabel")
+		msg.Size = UDim2.new(1, -24, 0, 60)
+		msg.Position = UDim2.new(0, 12, 0, 12)
+		msg.BackgroundTransparency = 1
+		msg.Font = Enum.Font.GothamBold
+		msg.TextSize = 18
+		msg.TextColor3 = Color3.fromRGB(235,235,235)
+		msg.Text = "Do you actually wanna close the script?"
+		msg.TextWrapped = true
+		msg.Parent = box
+
+		local yesBtn = Instance.new("TextButton")
+		yesBtn.Size = UDim2.new(0, 160, 0, 36)
+		yesBtn.Position = UDim2.new(0.5, -170, 1, -52)
+		yesBtn.BackgroundColor3 = Color3.fromRGB(200,60,60)
+		yesBtn.Text = "Yes"
+		yesBtn.Font = Enum.Font.GothamBold
+		yesBtn.TextSize = 16
+		yesBtn.TextColor3 = Color3.fromRGB(255,255,255)
+		yesBtn.ZIndex = 1001
+		yesBtn.Parent = box
+
+		local noBtn = Instance.new("TextButton")
+		noBtn.Size = UDim2.new(0, 160, 0, 36)
+		noBtn.Position = UDim2.new(0.5, 10, 1, -52)
+		noBtn.BackgroundColor3 = Color3.fromRGB(80,80,88)
+		noBtn.Text = "No"
+		noBtn.Font = Enum.Font.GothamBold
+		noBtn.TextSize = 16
+		noBtn.TextColor3 = Color3.fromRGB(255,255,255)
+		noBtn.ZIndex = 1001
+		noBtn.Parent = box
+
+		yesBtn.MouseButton1Click:Connect(function()
+			pcall(unloadScript)
+			overlay:Destroy()
+		end)
+
+		noBtn.MouseButton1Click:Connect(function()
+			overlay:Destroy()
+		end)
+	end
+
+	closeBtn.MouseButton1Click:Connect(function()
+		pcall(showCloseConfirmation)
+	end)
+
 	-- bring tabs above indicator
 	homeBtn.ZIndex = 2
 	visualsBtn.ZIndex = 2
 	playerBtn.ZIndex = 2
+	gameBtn.ZIndex = 2
 	tabIndicator.ZIndex = 1
 
 	-- Content
@@ -1523,21 +1829,69 @@ local function createESPGui()
 	playerSection.BackgroundTransparency = 1
 	playerSection.Parent = content
 
+	-- Game section
+	local gameSection = Instance.new("Frame")
+	gameSection.Name = "GameSection"
+	gameSection.Size = UDim2.new(1, 0, 1, 0)
+	gameSection.Visible = true
+	gameSection.Position = UDim2.new(3, 0, 0, 0)
+	gameSection.BackgroundTransparency = 1
+	gameSection.Parent = content
+
+	-- Player split columns (left/right) for controls
+	local playerLeftCol = Instance.new("Frame")
+	playerLeftCol.Name = "PlayerLeftCol"
+	playerLeftCol.Size = UDim2.new(0.55, -8, 1, -8)
+	playerLeftCol.Position = UDim2.new(0, 8, 0, 8)
+	playerLeftCol.BackgroundTransparency = 1
+	playerLeftCol.Parent = playerSection
+
+	local playerDivider = Instance.new("Frame")
+	playerDivider.Name = "PlayerDivider"
+	playerDivider.Size = UDim2.new(0, 2, 1, -16)
+	playerDivider.Position = UDim2.new(0.55, 0, 0, 8)
+	playerDivider.BackgroundColor3 = Color3.fromRGB(170,170,170)
+	playerDivider.BackgroundTransparency = 0.25
+	playerDivider.Parent = playerSection
+
+	local playerRightCol = Instance.new("Frame")
+	playerRightCol.Name = "PlayerRightCol"
+	playerRightCol.Size = UDim2.new(0.43, -8, 1, -8)
+	playerRightCol.Position = UDim2.new(0.57, 0, 0, 8)
+	playerRightCol.BackgroundTransparency = 1
+	playerRightCol.Parent = playerSection
+
+
+
+	-- Player Related header in left column
+	local playerHeader = Instance.new("TextLabel")
+	playerHeader.Size = UDim2.new(1, 0, 0, 24)
+	playerHeader.Position = UDim2.new(0, 8, 0, 0)
+	playerHeader.BackgroundTransparency = 1
+	playerHeader.Font = Enum.Font.GothamBold
+	playerHeader.TextSize = 18
+	playerHeader.Text = "Player Related"
+	playerHeader.TextColor3 = Color3.fromRGB(230,230,235)
+	playerHeader.TextStrokeTransparency = 1
+	playerHeader.TextXAlignment = Enum.TextXAlignment.Left
+	playerHeader.Parent = playerLeftCol
+
 	local speedLabel = Instance.new("TextLabel")
-	speedLabel.Size = UDim2.new(1, 0, 0, 24)
-	speedLabel.Position = UDim2.new(0, 8, 0, 8)
+	speedLabel.Size = UDim2.new(0.7, 0, 0, 24)
+	speedLabel.Position = UDim2.new(0, 8, 0, 32)
 	speedLabel.BackgroundTransparency = 1
 	speedLabel.Font = Enum.Font.GothamBold
-	speedLabel.TextSize = 14
+	speedLabel.TextSize = 16
 	speedLabel.Text = "Player Speed"
 	speedLabel.TextColor3 = Color3.fromRGB(255,255,255)
-	speedLabel.Parent = playerSection
+	speedLabel.TextXAlignment = Enum.TextXAlignment.Left
+	speedLabel.Parent = playerLeftCol
 
 	local speedSlider = Instance.new("Frame")
 	speedSlider.Size = UDim2.new(1, -16, 0, 24)
-	speedSlider.Position = UDim2.new(0, 8, 0, 36)
+	speedSlider.Position = UDim2.new(0, 8, 0, 64)
 	speedSlider.BackgroundTransparency = 1
-	speedSlider.Parent = playerSection
+	speedSlider.Parent = playerLeftCol
 
 	local speedBarBg = Instance.new("Frame")
 	speedBarBg.Size = UDim2.new(1, 0, 1, 0)
@@ -1563,7 +1917,6 @@ local function createESPGui()
 	local _fracSpeed = math.clamp((playerSpeed - 8) / (100 - 8), 0, 1)
 	speedFill.Size = UDim2.new(_fracSpeed, 0, 1, 0)
 
-	-- (More Stamina feature removed)
 
 	local leftCol = Instance.new("Frame")
 	leftCol.Name = "LeftCol"
@@ -1603,6 +1956,8 @@ local function createESPGui()
 		label.TextSize = 16
 		label.TextColor3 = Color3.fromRGB(245, 245, 245)
 		label.TextXAlignment = Enum.TextXAlignment.Left
+			-- ensure label sits behind interactive parts
+			label.ZIndex = 2
 		label.Parent = frame
 
 		local btnBg = Instance.new("Frame")
@@ -1611,7 +1966,9 @@ local function createESPGui()
 		btnBg.BackgroundColor3 = initial and Color3.fromRGB(140,160,180) or Color3.fromRGB(60,60,66)
 		btnBg.BackgroundTransparency = 0.12
 		local btnCorner = Instance.new("UICorner") btnCorner.Parent = btnBg
-		btnBg.Parent = frame
+			-- ensure toggle background and button draw above labels
+			btnBg.ZIndex = 3
+			btnBg.Parent = frame
 
 		local btn = Instance.new("TextButton")
 		btn.Size = UDim2.new(1, -8, 1, -6)
@@ -1621,7 +1978,9 @@ local function createESPGui()
 		btn.TextSize = 14
 		btn.TextStrokeTransparency = 0
 		btn.AutoButtonColor = false
-		btn.Parent = btnBg
+			-- put the actionable text on top
+			btn.ZIndex = 4
+			btn.Parent = btnBg
 
 		local stroke = Instance.new("UIStroke")
 		stroke.Thickness = 1
@@ -1656,10 +2015,14 @@ local function createESPGui()
 			btn.Text = state and "ON" or "OFF"
 			if state then
 				btn.TextColor3 = Color3.fromRGB(255,255,255)
+				-- remove stroke entirely for this toggle text so white reads cleanly
+				btn.TextStrokeTransparency = 1
 				stroke.Color = Color3.fromRGB(100,120,140)
 				btnBg.BackgroundColor3 = Color3.fromRGB(140,160,180)
 			else
 				btn.TextColor3 = Color3.fromRGB(220,220,220)
+				-- keep stroke removed for consistency; rely on color contrast
+				btn.TextStrokeTransparency = 1
 				stroke.Color = Color3.fromRGB(60,60,66)
 				btnBg.BackgroundColor3 = Color3.fromRGB(60,60,66)
 			end
@@ -1676,9 +2039,838 @@ local function createESPGui()
 		return frame
 	end
 
+	-- Small button helper (returns frame, button, and label)
+	local function makeSmallButton(parent, title, onClick)
+		local frame = Instance.new("Frame")
+		frame.Size = UDim2.new(1, -16, 0, 32)
+		frame.Position = UDim2.new(0, 8, 0, 0)
+		frame.BackgroundTransparency = 1
+		frame.Parent = parent
+
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.new(0.66, 0, 1, 0)
+		label.BackgroundTransparency = 1
+		label.Text = title
+		label.Font = Enum.Font.GothamBold
+		label.TextSize = 14
+		label.TextColor3 = Color3.fromRGB(245,245,245)
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.Parent = frame
+
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(0.28, 0, 0, 24)
+		btn.Position = UDim2.new(0.72, 0, 0, 4)
+		btn.BackgroundColor3 = Color3.fromRGB(70,70,76)
+		btn.AutoButtonColor = false
+		btn.Font = Enum.Font.GothamBold
+		btn.TextSize = 14
+		btn.TextColor3 = Color3.fromRGB(230,230,235)
+		btn.Text = "Change"
+		local btnCorner = Instance.new("UICorner") btnCorner.Parent = btn
+		btn.Parent = frame
+
+		btn.MouseButton1Click:Connect(function()
+			pcall(onClick, btn)
+		end)
+
+		return frame, btn, label
+	end
+
+	-- Button helper: similar layout to makeToggle but a single action button
+	local function makeButton(parent, title, onClick)
+		local frame = Instance.new("Frame")
+		frame.Size = UDim2.new(1, -16, 0, 32)
+		frame.Position = UDim2.new(0, 8, 0, 0)
+		frame.BackgroundTransparency = 1
+		frame.Parent = parent
+
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.new(0.66, 0, 1, 0)
+		label.BackgroundTransparency = 1
+		label.Text = title
+		label.Font = Enum.Font.GothamBold
+		label.TextSize = 14
+		label.TextColor3 = Color3.fromRGB(245,245,245)
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.Parent = frame
+
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(0.28, 0, 0, 24)
+		btn.Position = UDim2.new(0.72, 0, 0, 4)
+		btn.BackgroundColor3 = Color3.fromRGB(60,60,66) -- same color as toggle-off
+		btn.AutoButtonColor = false
+		btn.Font = Enum.Font.GothamBold
+		btn.TextSize = 14
+		btn.TextColor3 = Color3.fromRGB(230,230,235)
+		btn.Text = "Go"
+		local btnCorner = Instance.new("UICorner") btnCorner.Parent = btn
+		btn.Parent = frame
+
+		btn.MouseButton1Click:Connect(function()
+			-- run provided callback, then remove this control once
+			pcall(onClick)
+			pcall(function() if frame and frame.Destroy then frame:Destroy() end end)
+		end)
+
+		return frame, btn, label
+	end
+
+spawn(function()
+	while not makeToggle do task.wait() end
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	local RunService = game:GetService("RunService")
+
+	-- watcher state
+	local cachedPowerValue, cachedPowerValuesFolder
+	local power_current_conn, power_search_conn, power_folder_conn, power_descendant_conn
+	local power_gui, power_frame, power_label
+	local power_stat_label
+
+	local function findPowerValue()
+		if cachedPowerValue and cachedPowerValue.Parent then return cachedPowerValue end
+		local pvFolder = ReplicatedStorage:FindFirstChild("PowerValues") or ReplicatedStorage:FindFirstChild("powervalues")
+		if not pvFolder then return nil end
+		cachedPowerValuesFolder = pvFolder
+		local pl = pvFolder:FindFirstChild("PowerLevel") or pvFolder:FindFirstChild("powerlevel")
+		if not pl then return nil end
+		if pl:IsA("NumberValue") or pl:IsA("IntValue") or pl:IsA("StringValue") or pl:IsA("IntConstrainedValue") then
+			cachedPowerValue = pl
+			return pl
+		end
+		local val = pl:FindFirstChild("Value") or pl:FindFirstChild("value")
+		if val and (val:IsA("NumberValue") or val:IsA("IntValue") or val:IsA("StringValue")) then
+			cachedPowerValue = val
+			return val
+		end
+		return nil
+	end
+
+	local function createPowerGui()
+		local playerGui = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
+		if not playerGui then return end
+		local existing = playerGui:FindFirstChild("PowerLevelGui")
+		if existing then existing:Destroy() end
+		local sg = Instance.new("ScreenGui")
+		sg.Name = "PowerLevelGui"
+		sg.ResetOnSpawn = false
+		sg.DisplayOrder = 50
+		sg.Parent = playerGui
+
+		local frame = Instance.new("Frame")
+		frame.Name = "PowerLevelFrame"
+		frame.Size = UDim2.new(0, 220, 0, 36)
+		frame.Position = UDim2.new(1, -240, 0.85, 0)
+		frame.AnchorPoint = Vector2.new(0,0)
+		frame.BackgroundColor3 = Color3.fromRGB(24,24,28)
+		frame.BackgroundTransparency = 0.06
+		frame.ZIndex = 1
+		frame.Parent = sg
+		local corner = Instance.new("UICorner") corner.CornerRadius = UDim.new(0,8) corner.Parent = frame
+
+		local label = Instance.new("TextLabel")
+		label.Name = "PowerLevelLabel"
+		label.Size = UDim2.new(1, -16, 1, 0)
+		label.Position = UDim2.new(0, 8, 0, 0)
+		label.BackgroundTransparency = 1
+		label.Font = Enum.Font.GothamBold
+		label.TextSize = 16
+		label.TextColor3 = Color3.fromRGB(255,255,255)
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.TextYAlignment = Enum.TextYAlignment.Center
+		label.Text = "power: unknown"
+		label.ZIndex = 2
+		label.Parent = frame
+
+		power_gui, power_frame, power_label = sg, frame, label
+	end
+
+	local function updatePowerLabel(value)
+		if not power_label then return end
+		local text
+		if value == nil then
+			text = "power: unknown"
+		else
+			if tonumber(value) == 0 then
+				text = "power is out"
+			else
+				text = "power: " .. tostring(value)
+			end
+		end
+		pcall(function() power_label.Text = text end)
+		-- also update inline stat label in main GUI if present
+		pcall(function()
+			if power_stat_label and power_stat_label.Parent then
+				if value == nil then
+					power_stat_label.Text = "?"
+				else
+					power_stat_label.Text = tostring(value)
+				end
+			end
+		end)
+	end
+
+	local function hookPower(valueObj)
+		if not valueObj then return end
+		if power_current_conn then pcall(function() power_current_conn:Disconnect() end) power_current_conn = nil end
+		local ok, v = pcall(function() return valueObj.Value end)
+		if ok then updatePowerLabel(v) end
+		pcall(function()
+			if valueObj.GetPropertyChangedSignal then
+				power_current_conn = valueObj:GetPropertyChangedSignal("Value"):Connect(function()
+					local ok2, nv = pcall(function() return valueObj.Value end)
+					if ok2 then updatePowerLabel(nv) end
+				end)
+			else
+				power_current_conn = valueObj.Changed:Connect(function(nv)
+					updatePowerLabel(nv)
+				end)
+			end
+		end)
+	end
+
+	local function startPowerWatcher()
+		if not power_gui then createPowerGui() end
+		local val = findPowerValue()
+		if val then hookPower(val) end
+		if not cachedPowerValue then
+			power_search_conn = RunService.Heartbeat:Connect(function()
+				local v = findPowerValue()
+				if v then
+					if power_search_conn then power_search_conn:Disconnect(); power_search_conn = nil end
+					hookPower(v)
+				end
+			end)
+		end
+		if not cachedPowerValuesFolder then
+			power_folder_conn = ReplicatedStorage.ChildAdded:Connect(function(child)
+				if not child then return end
+				if child.Name:lower() == "powervalues" then
+					cachedPowerValuesFolder = child
+					local pl = cachedPowerValuesFolder:FindFirstChild("PowerLevel") or cachedPowerValuesFolder:FindFirstChild("powerlevel")
+					if pl then
+						local v = pl:FindFirstChild("Value") or pl:FindFirstChild("value")
+						if v then hookPower(v) end
+					end
+					power_descendant_conn = cachedPowerValuesFolder.DescendantAdded:Connect(function(inst)
+						if not inst then return end
+						if inst.Name:lower() == "powerlevel" then
+							local v = inst:FindFirstChild("Value") or inst:FindFirstChild("value")
+							if v then hookPower(v) end
+						elseif inst.Name:lower() == "value" and inst.Parent and inst.Parent.Name:lower() == "powerlevel" then
+							hookPower(inst)
+						end
+					end)
+				end
+			end)
+		else
+			power_descendant_conn = cachedPowerValuesFolder.DescendantAdded:Connect(function(inst)
+				if not inst then return end
+				if inst.Name:lower() == "powerlevel" then
+					local v = inst:FindFirstChild("Value") or inst:FindFirstChild("value")
+					if v then hookPower(v) end
+				elseif inst.Name:lower() == "value" and inst.Parent and inst.Parent.Name:lower() == "powerlevel" then
+					hookPower(inst)
+				end
+			end)
+		end
+		ReplicatedStorage.DescendantRemoving:Connect(function(inst)
+			if cachedPowerValue and (inst == cachedPowerValue or inst == cachedPowerValue.Parent) then
+				updatePowerLabel(nil)
+				if power_current_conn then pcall(function() power_current_conn:Disconnect() end) end
+				cachedPowerValue = nil
+			end
+		end)
+	end
+
+	local function stopPowerWatcher()
+		if power_search_conn then pcall(function() power_search_conn:Disconnect() end) power_search_conn = nil end
+		if power_folder_conn then pcall(function() power_folder_conn:Disconnect() end) power_folder_conn = nil end
+		if power_descendant_conn then pcall(function() power_descendant_conn:Disconnect() end) power_descendant_conn = nil end
+		if power_current_conn then pcall(function() power_current_conn:Disconnect() end) power_current_conn = nil end
+		if power_gui then pcall(function() power_gui:Destroy() end) power_gui, power_frame, power_label = nil, nil, nil end
+		cachedPowerValue = nil
+	end
+
+	-- expose start/stop for power watcher to GUI code (toggle created elsewhere)
+	_G._POWER_WATCHER = _G._POWER_WATCHER or {}
+	_G._POWER_WATCHER.start = startPowerWatcher
+	_G._POWER_WATCHER.stop = stopPowerWatcher
+end)
+
+-- Day/Night watcher implementation (imported from Beta Features/DayNightWatcher.lua)
+spawn(function()
+	while not makeToggle do task.wait() end
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	local RunService = game:GetService("RunService")
+
+	local cachedTimer
+	local cachedTurningToDay
+	local cachedNight
+
+	local timerConn, turningConn, nightConn, heartbeatConn
+
+	local function findValue(name)
+		if not ReplicatedStorage then return nil end
+		local inst = ReplicatedStorage:FindFirstChild(name)
+		return inst
+	end
+
+	local function findAll()
+		if not cachedTimer or not cachedTimer.Parent then
+			cachedTimer = findValue("Timer") or findValue("timer")
+		end
+		if not cachedTurningToDay or not cachedTurningToDay.Parent then
+			cachedTurningToDay = findValue("TurningToDay") or findValue("turningtoday")
+		end
+		if not cachedNight or not cachedNight.Parent then
+			cachedNight = findValue("Night") or findValue("night")
+		end
+		return cachedTimer, cachedTurningToDay, cachedNight
+	end
+
+	local day_gui, day_frame, day_state_label, day_time_label
+
+	local function createDayGui()
+		if not LocalPlayer then return end
+		local playerGui = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
+		if not playerGui then return end
+		local existing = playerGui:FindFirstChild("DayNightWatcherGui")
+		if existing then existing:Destroy() end
+		local sg = Instance.new("ScreenGui")
+		sg.Name = "DayNightWatcherGui"
+		sg.ResetOnSpawn = false
+		sg.DisplayOrder = 50
+		sg.Parent = playerGui
+
+		local frame = Instance.new("Frame")
+		frame.Name = "DayNightFrame"
+		frame.Size = UDim2.new(0, 260, 0, 56)
+		frame.Position = UDim2.new(1, -280, 0.78, 0)
+		frame.AnchorPoint = Vector2.new(0,0)
+		frame.BackgroundColor3 = Color3.fromRGB(24,24,28)
+		frame.BackgroundTransparency = 0.06
+		frame.ZIndex = 1
+		frame.Parent = sg
+		local corner = Instance.new("UICorner") corner.CornerRadius = UDim.new(0,8) corner.Parent = frame
+
+		local stateLabel = Instance.new("TextLabel")
+		stateLabel.Name = "StateLabel"
+		stateLabel.Size = UDim2.new(1, -16, 0, 22)
+		stateLabel.Position = UDim2.new(0, 8, 0, 6)
+		stateLabel.BackgroundTransparency = 1
+		stateLabel.Font = Enum.Font.GothamBold
+		stateLabel.TextSize = 14
+		stateLabel.TextColor3 = Color3.fromRGB(245,245,245)
+		stateLabel.TextXAlignment = Enum.TextXAlignment.Left
+		stateLabel.TextYAlignment = Enum.TextYAlignment.Center
+		stateLabel.Text = "State: unknown"
+		stateLabel.ZIndex = 2
+		stateLabel.Parent = frame
+
+		local timeLabel = Instance.new("TextLabel")
+		timeLabel.Name = "TimeLabel"
+		timeLabel.Size = UDim2.new(1, -16, 0, 22)
+		timeLabel.Position = UDim2.new(0, 8, 0, 30)
+		timeLabel.BackgroundTransparency = 1
+		timeLabel.Font = Enum.Font.Gotham
+		timeLabel.TextSize = 14
+		timeLabel.TextColor3 = Color3.fromRGB(220,220,225)
+		timeLabel.TextXAlignment = Enum.TextXAlignment.Left
+		timeLabel.TextYAlignment = Enum.TextYAlignment.Center
+		timeLabel.Text = "Time until: --"
+		timeLabel.ZIndex = 2
+		timeLabel.Parent = frame
+
+		day_gui, day_frame, day_state_label, day_time_label = sg, frame, stateLabel, timeLabel
+	end
+
+	local function formatTime(t)
+		if not t or t <= 0 then return "0s" end
+		local s = math.floor(t)
+		local m = math.floor(s / 60)
+		local rem = s % 60
+		if m > 0 then
+			return string.format("%dm %ds", m, rem)
+		else
+			return string.format("%ds", rem)
+		end
+	end
+
+	local function updateDisplay()
+		local timer = cachedTimer
+		local turning = cachedTurningToDay
+		local night = cachedNight
+
+		local timerVal = nil
+		if timer then pcall(function() timerVal = timer.Value end) end
+
+		local isNight = nil
+		if night then pcall(function() isNight = night.Value end) end
+		local isTurning = nil
+		if turning then pcall(function() isTurning = turning.Value end) end
+
+		local stateText = "State: unknown"
+		if isNight == true then stateText = "State: Night"
+		elseif isNight == false then stateText = "State: Day" end
+		if isTurning ~= nil then
+			stateText = stateText .. (isTurning and " (Turning to Day)" or "")
+		end
+		pcall(function() if day_state_label then day_state_label.Text = stateText end end)
+
+		if timerVal ~= nil then
+			local t = tonumber(timerVal)
+			if t then
+				local target = (isNight == true) and "day" or "night"
+				local labelText = "Time until " .. target .. ": " .. formatTime(t)
+				pcall(function() if day_time_label then day_time_label.Text = labelText end end)
+				return
+			end
+		end
+		pcall(function() if day_time_label then day_time_label.Text = "Time until: unknown" end end)
+	end
+
+	local function hookEvents()
+		if timerConn then pcall(function() timerConn:Disconnect() end) timerConn = nil end
+		if turningConn then pcall(function() turningConn:Disconnect() end) turningConn = nil end
+		if nightConn then pcall(function() nightConn:Disconnect() end) nightConn = nil end
+
+		if cachedTimer and cachedTimer.GetPropertyChangedSignal then
+			timerConn = cachedTimer:GetPropertyChangedSignal("Value"):Connect(function() updateDisplay() end)
+		elseif cachedTimer and cachedTimer.Changed then
+			timerConn = cachedTimer.Changed:Connect(function() updateDisplay() end)
+		end
+
+		if cachedTurningToDay and cachedTurningToDay.GetPropertyChangedSignal then
+			turningConn = cachedTurningToDay:GetPropertyChangedSignal("Value"):Connect(function() updateDisplay() end)
+		elseif cachedTurningToDay and cachedTurningToDay.Changed then
+			turningConn = cachedTurningToDay.Changed:Connect(function() updateDisplay() end)
+		end
+
+		if cachedNight and cachedNight.GetPropertyChangedSignal then
+			nightConn = cachedNight:GetPropertyChangedSignal("Value"):Connect(function() updateDisplay() end)
+		elseif cachedNight and cachedNight.Changed then
+			nightConn = cachedNight.Changed:Connect(function() updateDisplay() end)
+		end
+	end
+
+	local function startDayWatcher()
+		if not day_gui then createDayGui() end
+		findAll()
+		if cachedTimer or cachedTurningToDay or cachedNight then
+			updateDisplay()
+			hookEvents()
+		end
+
+		if heartbeatConn then heartbeatConn:Disconnect() heartbeatConn = nil end
+		heartbeatConn = RunService.Heartbeat:Connect(function()
+			findAll()
+			if (cachedTimer or cachedTurningToDay or cachedNight) then
+				updateDisplay()
+				hookEvents()
+				if heartbeatConn then heartbeatConn:Disconnect() heartbeatConn = nil end
+			end
+		end)
+	end
+
+	local function stopDayWatcher()
+		if timerConn then pcall(function() timerConn:Disconnect() end) timerConn = nil end
+		if turningConn then pcall(function() turningConn:Disconnect() end) turningConn = nil end
+		if nightConn then pcall(function() nightConn:Disconnect() end) nightConn = nil end
+		if heartbeatConn then pcall(function() heartbeatConn:Disconnect() end) heartbeatConn = nil end
+		if day_gui then pcall(function() day_gui:Destroy() end) day_gui, day_frame, day_state_label, day_time_label = nil, nil, nil, nil end
+		cachedTimer, cachedTurningToDay, cachedNight = nil, nil, nil
+	end
+
+	_G._DAY_TIMER = _G._DAY_TIMER or {}
+	_G._DAY_TIMER.start = startDayWatcher
+	_G._DAY_TIMER.stop = stopDayWatcher
+end)
+
+
+
+	-- Ensure Game left column and divider exist, then add Power Level Stat toggle
+	pcall(function()
+		local initial = false
+		pcall(function()
+			initial = LocalPlayer:GetAttribute("Rake_PowerLevelEnabled") or (loadedSettings and loadedSettings.PowerLevelEnabled) or false
+		end)
+		local parentCol = gameSection:FindFirstChild("GameLeftCol")
+		if not parentCol then
+			parentCol = Instance.new("Frame")
+			parentCol.Name = "GameLeftCol"
+			parentCol.Size = UDim2.new(0.55, -8, 1, -8)
+			parentCol.Position = UDim2.new(0, 8, 0, 8)
+			parentCol.BackgroundTransparency = 1
+			parentCol.Parent = gameSection
+		end
+		if not gameSection:FindFirstChild("GameDivider") then
+			local div = Instance.new("Frame")
+			div.Name = "GameDivider"
+			div.Size = UDim2.new(0, 2, 1, -16)
+			div.Position = UDim2.new(0.55, 0, 0, 8)
+			div.BackgroundColor3 = Color3.fromRGB(170,170,170)
+			div.BackgroundTransparency = 0.25
+			div.Parent = gameSection
+		end
+
+		local f = makeToggle(parentCol, "Power Level Stat", initial, function(v)
+			pcall(function() LocalPlayer:SetAttribute("Rake_PowerLevelEnabled", v) end)
+			if loadedSettings then loadedSettings.PowerLevelEnabled = v; pcall(saveSettings, loadedSettings) end
+			if v then
+				pcall(function() if _G and _G._POWER_WATCHER and _G._POWER_WATCHER.start then pcall(_G._POWER_WATCHER.start) end end)
+			else
+				pcall(function() if _G and _G._POWER_WATCHER and _G._POWER_WATCHER.stop then pcall(_G._POWER_WATCHER.stop) end end)
+			end
+		end)
+		if f and f:IsA("Instance") then
+			f.Position = UDim2.new(0,8,0,8)
+			-- inline stat label for power watcher to update
+			local statLabel = Instance.new("TextLabel")
+			statLabel.Size = UDim2.new(0.12, 0, 1, 0)
+			statLabel.Position = UDim2.new(0.66, 4, 0, 0)
+			statLabel.BackgroundTransparency = 1
+			statLabel.Font = Enum.Font.GothamBold
+			statLabel.TextSize = 14
+			statLabel.TextColor3 = Color3.fromRGB(200,200,200)
+			statLabel.Text = "?"
+			statLabel.TextXAlignment = Enum.TextXAlignment.Right
+			statLabel.Parent = f
+			power_stat_label = statLabel
+		end
+
+		-- ensure watcher starts if initial is true; wait for watcher API if necessary
+		if initial then
+			spawn(function()
+				local tries = 0
+				while tries < 100 and (not _G or not _G._POWER_WATCHER or not _G._POWER_WATCHER.start) do
+					task.wait(0.05)
+					tries = tries + 1
+				end
+				pcall(function()
+					if _G and _G._POWER_WATCHER and _G._POWER_WATCHER.start then _G._POWER_WATCHER.start() end
+				end)
+			end)
+		end
+
+		-- Add Day/Night Timer toggle below Power Level Stat in left column
+		pcall(function()
+			local initialDN = false
+			pcall(function()
+				initialDN = LocalPlayer:GetAttribute("Rake_DayNightTimerEnabled") or (loadedSettings and loadedSettings.DayNightTimerEnabled) or false
+			end)
+			local dn = makeToggle(parentCol, "Day/Night Timer", initialDN, function(v)
+				pcall(function() LocalPlayer:SetAttribute("Rake_DayNightTimerEnabled", v) end)
+				if loadedSettings then loadedSettings.DayNightTimerEnabled = v; pcall(saveSettings, loadedSettings) end
+				if v then
+					pcall(function() if _G and _G._DAY_TIMER and _G._DAY_TIMER.start then _G._DAY_TIMER.start() end end)
+				else
+					pcall(function() if _G and _G._DAY_TIMER and _G._DAY_TIMER.stop then _G._DAY_TIMER.stop() end end)
+				end
+			end)
+			if dn and dn:IsA("Instance") then dn.Position = UDim2.new(0,8,0,56) end
+			if initialDN then spawn(function()
+				local tries = 0
+				while tries < 100 and (not _G or not _G._DAY_TIMER or not _G._DAY_TIMER.start) do task.wait(0.05); tries = tries + 1 end
+				pcall(function() if _G and _G._DAY_TIMER and _G._DAY_TIMER.start then _G._DAY_TIMER.start() end end)
+			end) end
+		end)
+
+		-- Add Fall Damage button (one-shot delete of FD_Event in ReplicatedStorage)
+		pcall(function()
+			local btnFrame, btn, lbl = makeButton(parentCol, "Fall Damage", function()
+				local rs = game:GetService("ReplicatedStorage")
+				local parentGui = nil
+				pcall(function() parentGui = game:GetService("CoreGui") end)
+				if not parentGui or not parentGui.Parent then parentGui = LocalPlayer:FindFirstChild("PlayerGui") end
+				local function notify(text)
+					pcall(function()
+						if not parentGui then return end
+						local existingGui = parentGui:FindFirstChild("FallDamageNotifGui")
+						if existingGui then existingGui:Destroy() end
+						local sg = Instance.new("ScreenGui")
+						sg.Name = "FallDamageNotifGui"
+						sg.ResetOnSpawn = false
+						sg.DisplayOrder = 2000
+						sg.Parent = parentGui
+						local notif = Instance.new("Frame")
+						notif.Name = "FallDamageNotif"
+						notif.Size = UDim2.new(0, 320, 0, 40)
+						notif.Position = UDim2.new(1, -340, 1, -84)
+						notif.AnchorPoint = Vector2.new(0,0)
+						notif.BackgroundColor3 = Color3.fromRGB(24,24,28)
+						notif.BackgroundTransparency = 0.06
+						notif.ZIndex = 2000
+						notif.Parent = sg
+						local corner = Instance.new("UICorner") corner.CornerRadius = UDim.new(0,8) corner.Parent = notif
+						local msg = Instance.new("TextLabel")
+						msg.Size = UDim2.new(1, -16, 1, 0)
+						msg.Position = UDim2.new(0, 8, 0, 0)
+						msg.BackgroundTransparency = 1
+						msg.Font = Enum.Font.GothamBold
+						msg.TextSize = 14
+						msg.TextColor3 = Color3.fromRGB(255,255,255)
+						msg.ZIndex = 2001
+						msg.Text = text
+						msg.TextXAlignment = Enum.TextXAlignment.Left
+						msg.TextYAlignment = Enum.TextYAlignment.Center
+						msg.Parent = notif
+						task.delay(3, function() pcall(function() if sg and sg.Parent then sg:Destroy() end end) end)
+					end)
+				end
+				local success = false
+				local ev = rs:FindFirstChild("FD_Event")
+				if ev and ev.Parent then
+					pcall(function() ev:Destroy() end)
+					success = true
+				end
+				if success then notify("Fall damage was removed") else notify("Failed to delete fall damage.") end
+			end)
+			if btnFrame and btnFrame:IsA("Instance") then btnFrame.Position = UDim2.new(0,8,0,104) end
+		end)
+	end)
+
+		local rakeHeader = Instance.new("TextLabel")
+		rakeHeader.Size = UDim2.new(1, 0, 0, 24)
+		rakeHeader.Position = UDim2.new(0, 8, 0, 0)
+		rakeHeader.BackgroundTransparency = 1
+		rakeHeader.Font = Enum.Font.GothamBold
+		rakeHeader.TextSize = 18
+		rakeHeader.Text = "Rake Related"
+		rakeHeader.TextColor3 = Color3.fromRGB(230,230,235)
+		rakeHeader.TextStrokeTransparency = 1
+		rakeHeader.TextXAlignment = Enum.TextXAlignment.Left
+		rakeHeader.Parent = playerRightCol
+
+
+		local rakeToggle = makeToggle(playerRightCol, "Rake Kill Aura", rakeKillAuraEnabled, function(v)
+			rakeKillAuraEnabled = v
+			pcall(function() LocalPlayer:SetAttribute("Rake_RakeKillAuraEnabled", v) end)
+			saveSettings()
+		end)
+		if rakeToggle and rakeToggle:IsA("Instance") then
+			rakeToggle.Position = UDim2.new(0, 8, 0, 32)
+		end
+
+		local keyFrame, keyBtn, keyLabel = makeSmallButton(playerRightCol, "Key: " .. tostring(rakeKillKey), function()
+			-- start key capture
+			local captureLabel = Instance.new("TextLabel")
+			captureLabel.Size = UDim2.new(1, -16, 0, 28)
+			captureLabel.Position = UDim2.new(0, 8, 0, 120)
+			captureLabel.BackgroundTransparency = 1
+			captureLabel.Font = Enum.Font.GothamBold
+			captureLabel.TextSize = 16
+			captureLabel.TextColor3 = Color3.fromRGB(255,255,255)
+			captureLabel.Text = "Press a key to select, then Enter to save!"
+			captureLabel.TextXAlignment = Enum.TextXAlignment.Center
+			captureLabel.Parent = playerRightCol
+			-- ensure the capture label is visually behind interactive text/buttons
+			captureLabel.ZIndex = 0
+
+			local selectedKey = rakeKillKey
+			local conn
+			-- indicate capturing
+			if keyBtn and keyBtn:IsA("TextButton") then keyBtn.Text = "..." end
+			conn = UserInputService.InputBegan:Connect(function(input, processed)
+				if input.KeyCode == Enum.KeyCode.Return or input.KeyCode == Enum.KeyCode.KeypadEnter then
+					-- save
+					if selectedKey and selectedKey ~= "" then
+						rakeKillKey = selectedKey
+						pcall(function() LocalPlayer:SetAttribute("Rake_RakeKillKey", rakeKillKey) end)
+						saveSettings()
+						warn("RakeKill: saved key -> "..tostring(rakeKillKey))
+									pcall(function() bindKillKey(tostring(rakeKillKey)) end)
+						if keyLabel and keyLabel:IsA("TextLabel") then
+							keyLabel.Text = "Key: " .. tostring(rakeKillKey)
+						end
+						if keyBtn and keyBtn:IsA("TextButton") then
+							keyBtn.Text = tostring(rakeKillKey)
+						end
+						pcall(function()
+							for _,child in pairs(playerRightCol:GetDescendants()) do
+								if child:IsA("TextLabel") and child.Text:match("^Key:%s*") then
+									child.Text = "Key: " .. tostring(rakeKillKey)
+								end
+								if child:IsA("TextButton") and child.Text == "..." then
+									child.Text = tostring(rakeKillKey)
+								end
+							end
+						end)
+					end
+					captureLabel:Destroy()
+					if keyBtn and keyBtn:IsA("TextButton") then keyBtn.Text = "Change" end
+					if conn then conn:Disconnect() end
+				elseif input.UserInputType == Enum.UserInputType.Keyboard then
+					selectedKey = input.KeyCode.Name
+					captureLabel.Text = "Selected: " .. tostring(selectedKey) .. " — Press Enter to save!"
+					if keyLabel and keyLabel:IsA("TextLabel") then
+						keyLabel.Text = "Key: " .. tostring(selectedKey)
+					elseif keyFrame and keyFrame:IsA("Instance") then
+						local found = keyFrame:FindFirstChildWhichIsA("TextLabel")
+						if found then found.Text = "Key: " .. tostring(selectedKey) end
+					end
+					if keyBtn and keyBtn:IsA("TextButton") then
+						keyBtn.Text = tostring(selectedKey)
+					elseif keyFrame and keyFrame:IsA("Instance") then
+						local foundBtn = keyFrame:FindFirstChildWhichIsA("TextButton")
+						if foundBtn then foundBtn.Text = tostring(selectedKey) end
+					end
+					warn("RakeKill: captured key -> "..tostring(selectedKey))
+				end
+			end)
+		end)
+
+		if keyFrame and keyFrame:IsA("Instance") then
+			keyFrame.Position = UDim2.new(0, 8, 0, 80)
+		end
+		if keyLabel and keyLabel:IsA("TextLabel") then
+			keyLabel.Text = "Key: " .. tostring(rakeKillKey)
+		end
+
+
+		local ContextActionService = game:GetService("ContextActionService")
+		local RAKE_KILL_ACTION = "RakeKillToggleAction"
+
+		local function updateToggleVisual()
+			pcall(function()
+				for _,fr in pairs(playerRightCol:GetChildren()) do
+					if fr:IsA("Frame") then
+						local lbl = fr:FindFirstChildWhichIsA("TextLabel")
+						if lbl and lbl.Text == "Rake Kill Aura" then
+							local tbtn = nil
+							local btnBg = nil
+							local stroke = nil
+							for _,c in pairs(fr:GetDescendants()) do
+								if c:IsA("TextButton") and not tbtn then tbtn = c end
+								if c:IsA("Frame") and tostring(c.Name):lower():find("btn") and not btnBg then btnBg = c end
+								if c:IsA("UIStroke") and not stroke then stroke = c end
+							end
+							if tbtn then
+								-- mirror the visuals from makeToggle.applyToggleVisual
+								tbtn.Text = rakeKillAuraEnabled and "ON" or "OFF"
+									-- ensure no stroke on this toggle text so it remains crisp on dark background
+									tbtn.TextColor3 = rakeKillAuraEnabled and Color3.fromRGB(255,255,255) or Color3.fromRGB(220,220,220)
+									tbtn.TextStrokeTransparency = 1
+								if stroke and stroke:IsA("UIStroke") then
+									stroke.Color = rakeKillAuraEnabled and Color3.fromRGB(100,120,140) or Color3.fromRGB(60,60,66)
+								end
+								if btnBg and btnBg:IsA("Frame") then
+									btnBg.BackgroundColor3 = rakeKillAuraEnabled and Color3.fromRGB(140,160,180) or Color3.fromRGB(60,60,66)
+								end
+							end
+						end
+					end
+				end
+			end)
+		end
+
+		local function killAction(actionName, inputState, inputObject)
+			if inputState ~= Enum.UserInputState.Begin then return end
+			-- toggle
+			rakeKillAuraEnabled = not rakeKillAuraEnabled
+			pcall(function() LocalPlayer:SetAttribute("Rake_RakeKillAuraEnabled", rakeKillAuraEnabled) end)
+			saveSettings()
+			updateToggleVisual()
+			-- notif for when rake kill aura is on or off // is sep from screen gui
+			pcall(function()
+				local parentGui = nil
+				local ok = pcall(function()
+					parentGui = game:GetService("CoreGui")
+				end)
+				if not ok or not parentGui then parentGui = LocalPlayer:FindFirstChild("PlayerGui") end
+				if not parentGui then return end
+				-- remove existing notification gui if any
+				local existingGui = parentGui:FindFirstChild("RakeKillNotifGui")
+				if existingGui then existingGui:Destroy() end
+				local sg = Instance.new("ScreenGui")
+				sg.Name = "RakeKillNotifGui"
+				sg.ResetOnSpawn = false
+				sg.DisplayOrder = 2000
+				sg.Parent = parentGui
+				local notif = Instance.new("Frame")
+				notif.Name = "RakeKillNotif"
+				notif.Size = UDim2.new(0, 260, 0, 40)
+				notif.Position = UDim2.new(1, -280, 1, -84)
+				notif.AnchorPoint = Vector2.new(0,0)
+				notif.BackgroundColor3 = Color3.fromRGB(24,24,28)
+				notif.BackgroundTransparency = 0.06
+				-- keep frame behind and place text above it
+				notif.ZIndex = 20
+				notif.Parent = sg
+				local corner = Instance.new("UICorner") corner.CornerRadius = UDim.new(0,8) corner.Parent = notif
+				local msg = Instance.new("TextLabel")
+				msg.Size = UDim2.new(1, -16, 1, 0)
+				msg.Position = UDim2.new(0, 8, 0, 0)
+				msg.BackgroundTransparency = 1
+				msg.Font = Enum.Font.GothamBold
+				msg.TextSize = 14
+				msg.TextColor3 = Color3.fromRGB(255,255,255)
+				msg.ZIndex = 21
+				msg.Text = (rakeKillAuraEnabled and "Kill aura is on now") or "Kill aura is off now"
+				msg.TextXAlignment = Enum.TextXAlignment.Left
+				msg.TextYAlignment = Enum.TextYAlignment.Center
+				msg.Parent = notif
+				-- destroy after 3 seconds
+				task.delay(3, function()
+					pcall(function() if sg and sg.Parent then sg:Destroy() end end)
+				end)
+			end)
+		end
+
+		local function bindKillKey(keyName)
+			pcall(function() ContextActionService:UnbindAction(RAKE_KILL_ACTION) end)
+			local ok, keyEnum = pcall(function() return Enum.KeyCode[keyName] end)
+			if ok and keyEnum then
+				pcall(function()
+					ContextActionService:BindAction(RAKE_KILL_ACTION, killAction, false, keyEnum)
+				end)
+			end
+		end
+
+		-- initial bind
+		bindKillKey(tostring(rakeKillKey))
+
+		-- Killaura runtime (store connection so we can disconnect on unload)
+		do
+			local lastRakeAttack = 0
+			rakeKillConn = RunService.Heartbeat:Connect(function()
+				if not SCRIPT_ACTIVE then return end
+				if not rakeKillAuraEnabled then return end
+				pcall(function()
+					local rake = workspace:FindFirstChild("Rake")
+					if not rake or not rake:FindFirstChild("HumanoidRootPart") then return end
+					local char = LocalPlayer.Character
+					if not char then return end
+					local stun = char:FindFirstChild("StunStick")
+					if not stun then return end
+					local hit = stun:FindFirstChild("HitPart") or stun:FindFirstChildWhichIsA("BasePart")
+					if hit then
+						hit.Position = rake.HumanoidRootPart.Position
+					end
+					-- attempt to trigger server-side attack when in range, debounced
+					local hrp = char:FindFirstChild("HumanoidRootPart")
+					if hrp and (hrp.Position - rake.HumanoidRootPart.Position).Magnitude < 200 then
+						local now = tick()
+						if now - lastRakeAttack > 0.18 then
+							lastRakeAttack = now
+							-- fire the stun events similar to Gen1 implementation
+							spawn(function()
+								pcall(function()
+									local evt = stun:FindFirstChild("Event") or stun:FindFirstChildWhichIsA("RemoteEvent")
+									if evt and evt.FireServer then
+										pcall(function() evt:FireServer("S") end)
+										wait(0.06)
+										pcall(function() evt:FireServer("H", rake.HumanoidRootPart) end)
+									end
+								end)
+							end)
+						end
+					end
+				end)
+			end)
+		end
+
 	if playerSection then
-		-- Speed enable toggle
-		local speedEnableToggle = makeToggle(playerSection, "Enable Speed", playerSpeedEnabled, function(v)
+		local speedEnableToggle = makeToggle(playerLeftCol, "Enable Speed", playerSpeedEnabled, function(v)
 			playerSpeedEnabled = v
 			pcall(function() LocalPlayer:SetAttribute("Rake_PlayerSpeedEnabled", v) end)
 			if v then
@@ -1699,7 +2891,11 @@ local function createESPGui()
 			end
 			saveSettings()
 		end)
-		speedEnableToggle.Position = UDim2.new(0, 8, 0, 68)
+		-- ensure the toggle sits below the speed slider/header
+		if speedEnableToggle and speedEnableToggle:IsA("Instance") then
+			speedEnableToggle.Position = UDim2.new(0, 8, 0, 96)
+			speedEnableToggle.Size = UDim2.new(1, -16, 0, 40)
+		end
 	end
 
 	-- Right column: Camera settings (FOV slider + POV radio)
@@ -1847,6 +3043,12 @@ local function createESPGui()
 		isDragable = not newVis
 	end)
 
+	-- ensure this specific keybind button sits next to its label
+	if keyBtn and keyBtn:IsA("TextButton") then
+		keyBtn.Position = UDim2.new(0.66, 0, 0, 4)
+		keyBtn.Size = UDim2.new(0.34, 0, 0, 24)
+	end
+
 	-- Player section speed dragging input
 	local draggingSpeed = false
 	speedBarBg.InputBegan:Connect(function(input)
@@ -1884,7 +3086,7 @@ local function createESPGui()
 	end)
 
 	-- ensure speed applies on character spawn
-	LocalPlayer.CharacterAdded:Connect(function(char)
+	localPlayerCharAddedConn = LocalPlayer.CharacterAdded:Connect(function(char)
 		task.wait(0.15)
 		local hum = char and char:FindFirstChildOfClass("Humanoid")
 		if hum then
@@ -2864,23 +4066,23 @@ local function createESPGui()
 	end)
 	trapToggle.Position = UDim2.new(0, 8, 0, 132)
 
-	-- If loaded settings requested Object Finder enabled, enable it now
 	if shouldEnableObjectFinder then
 		pcall(function() enableObjectFinder() end)
 	end
 
-	-- If loaded settings requested Trap Detector enabled, enable it now
 	if shouldEnableTrapDetector then
 		pcall(function() enableTrapDetector() end)
 	end
 
-	-- Active section handling: move button up and change text color
+
 	local homeDefaultPos = homeBtn.Position
 	local visualsDefaultPos = visualsBtn.Position
 	local playerDefaultPos = playerBtn.Position
+	local gameDefaultPos = gameBtn.Position
 	local homeActivePos = UDim2.new(homeDefaultPos.X.Scale, homeDefaultPos.X.Offset, homeDefaultPos.Y.Scale, homeDefaultPos.Y.Offset - 6)
 	local visualsActivePos = UDim2.new(visualsDefaultPos.X.Scale, visualsDefaultPos.X.Offset, visualsDefaultPos.Y.Scale, visualsDefaultPos.Y.Offset - 6)
 	local playerActivePos = UDim2.new(playerDefaultPos.X.Scale, playerDefaultPos.X.Offset, playerDefaultPos.Y.Scale, playerDefaultPos.Y.Offset - 6)
+	local gameActivePos = UDim2.new(gameDefaultPos.X.Scale, gameDefaultPos.X.Offset, gameDefaultPos.Y.Scale, gameDefaultPos.Y.Offset - 6)
 	local tweenInfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 	local function setActiveSection(name)
@@ -2888,10 +4090,11 @@ local function createESPGui()
 		homeSection.Visible = true
 		visualsSection.Visible = true
 		playerSection.Visible = true
+		gameSection.Visible = true
 
 		-- helper to compute target positions so active section slides to X=0
-		local order = { Home = homeSection, Visuals = visualsSection, Player = playerSection }
-		local activeIndex = (name == "Home" and 1) or (name == "Visuals" and 2) or 3
+		local order = { Home = homeSection, Visuals = visualsSection, Player = playerSection, Game = gameSection }
+		local activeIndex = (name == "Home" and 1) or (name == "Visuals" and 2) or (name == "Player" and 3) or 4
 		local function posForIndex(idx)
 			return UDim2.new(idx - activeIndex, 0, 0, 0)
 		end
@@ -2899,6 +4102,7 @@ local function createESPGui()
 			TweenService:Create(homeBtn, tweenInfo, {Position = homeActivePos, TextColor3 = Color3.fromRGB(150,8,8)}):Play()
 			TweenService:Create(visualsBtn, tweenInfo, {Position = visualsDefaultPos, TextColor3 = Color3.fromRGB(255,255,255)}):Play()
 			TweenService:Create(playerBtn, tweenInfo, {Position = playerDefaultPos, TextColor3 = Color3.fromRGB(255,255,255)}):Play()
+			TweenService:Create(gameBtn, tweenInfo, {Position = gameDefaultPos, TextColor3 = Color3.fromRGB(255,255,255)}):Play()
 			-- animate backgrounds
 			TweenService:Create(homeBtn, tweenInfo, {BackgroundColor3 = Color3.fromRGB(60,60,70)}):Play()
 			TweenService:Create(visualsBtn, tweenInfo, {BackgroundColor3 = Color3.fromRGB(38,38,45)}):Play()
@@ -2912,10 +4116,12 @@ local function createESPGui()
 			TweenService:Create(homeSection, tweenInfo, {Position = posForIndex(1)}):Play()
 			TweenService:Create(visualsSection, tweenInfo, {Position = posForIndex(2)}):Play()
 			TweenService:Create(playerSection, tweenInfo, {Position = posForIndex(3)}):Play()
+			TweenService:Create(gameSection, tweenInfo, {Position = posForIndex(4)}):Play()
 		elseif name == "Visuals" then
 			TweenService:Create(visualsBtn, tweenInfo, {Position = visualsActivePos, TextColor3 = Color3.fromRGB(150,8,8)}):Play()
 			TweenService:Create(homeBtn, tweenInfo, {Position = homeDefaultPos, TextColor3 = Color3.fromRGB(255,255,255)}):Play()
 			TweenService:Create(playerBtn, tweenInfo, {Position = playerDefaultPos, TextColor3 = Color3.fromRGB(255,255,255)}):Play()
+			TweenService:Create(gameBtn, tweenInfo, {Position = gameDefaultPos, TextColor3 = Color3.fromRGB(255,255,255)}):Play()
 			-- animate backgrounds
 			TweenService:Create(visualsBtn, tweenInfo, {BackgroundColor3 = Color3.fromRGB(60,60,70)}):Play()
 			TweenService:Create(homeBtn, tweenInfo, {BackgroundColor3 = Color3.fromRGB(38,38,45)}):Play()
@@ -2929,14 +4135,17 @@ local function createESPGui()
 			TweenService:Create(homeSection, tweenInfo, {Position = posForIndex(1)}):Play()
 			TweenService:Create(visualsSection, tweenInfo, {Position = posForIndex(2)}):Play()
 			TweenService:Create(playerSection, tweenInfo, {Position = posForIndex(3)}):Play()
-		else
+			TweenService:Create(gameSection, tweenInfo, {Position = posForIndex(4)}):Play()
+		elseif name == "Player" then
 			TweenService:Create(playerBtn, tweenInfo, {Position = playerActivePos, TextColor3 = Color3.fromRGB(150,8,8)}):Play()
 			TweenService:Create(homeBtn, tweenInfo, {Position = homeDefaultPos, TextColor3 = Color3.fromRGB(255,255,255)}):Play()
 			TweenService:Create(visualsBtn, tweenInfo, {Position = visualsDefaultPos, TextColor3 = Color3.fromRGB(255,255,255)}):Play()
+			TweenService:Create(gameBtn, tweenInfo, {Position = gameDefaultPos, TextColor3 = Color3.fromRGB(255,255,255)}):Play()
 			-- animate backgrounds
 			TweenService:Create(playerBtn, tweenInfo, {BackgroundColor3 = Color3.fromRGB(60,60,70)}):Play()
 			TweenService:Create(homeBtn, tweenInfo, {BackgroundColor3 = Color3.fromRGB(38,38,45)}):Play()
 			TweenService:Create(visualsBtn, tweenInfo, {BackgroundColor3 = Color3.fromRGB(38,38,45)}):Play()
+			TweenService:Create(gameBtn, tweenInfo, {BackgroundColor3 = Color3.fromRGB(38,38,45)}):Play()
 			-- move tab indicator
 			if tabIndicator then
 				local tgt = UDim2.new(0, playerDefaultPos.X.Offset, 1, -3)
@@ -2946,6 +4155,27 @@ local function createESPGui()
 			TweenService:Create(homeSection, tweenInfo, {Position = posForIndex(1)}):Play()
 			TweenService:Create(visualsSection, tweenInfo, {Position = posForIndex(2)}):Play()
 			TweenService:Create(playerSection, tweenInfo, {Position = posForIndex(3)}):Play()
+			TweenService:Create(gameSection, tweenInfo, {Position = posForIndex(4)}):Play()
+		elseif name == "Game" then
+			TweenService:Create(gameBtn, tweenInfo, {Position = gameActivePos, TextColor3 = Color3.fromRGB(150,8,8)}):Play()
+			TweenService:Create(homeBtn, tweenInfo, {Position = homeDefaultPos, TextColor3 = Color3.fromRGB(255,255,255)}):Play()
+			TweenService:Create(visualsBtn, tweenInfo, {Position = visualsDefaultPos, TextColor3 = Color3.fromRGB(255,255,255)}):Play()
+			TweenService:Create(playerBtn, tweenInfo, {Position = playerDefaultPos, TextColor3 = Color3.fromRGB(255,255,255)}):Play()
+			-- animate backgrounds
+			TweenService:Create(gameBtn, tweenInfo, {BackgroundColor3 = Color3.fromRGB(60,60,70)}):Play()
+			TweenService:Create(homeBtn, tweenInfo, {BackgroundColor3 = Color3.fromRGB(38,38,45)}):Play()
+			TweenService:Create(visualsBtn, tweenInfo, {BackgroundColor3 = Color3.fromRGB(38,38,45)}):Play()
+			TweenService:Create(playerBtn, tweenInfo, {BackgroundColor3 = Color3.fromRGB(38,38,45)}):Play()
+			-- move tab indicator
+			if tabIndicator then
+				local tgt = UDim2.new(0, gameDefaultPos.X.Offset, 1, -3)
+				TweenService:Create(tabIndicator, tweenInfo, {Position = tgt}):Play()
+			end
+			-- slide sections: game -> center
+			TweenService:Create(homeSection, tweenInfo, {Position = posForIndex(1)}):Play()
+			TweenService:Create(visualsSection, tweenInfo, {Position = posForIndex(2)}):Play()
+			TweenService:Create(playerSection, tweenInfo, {Position = posForIndex(3)}):Play()
+			TweenService:Create(gameSection, tweenInfo, {Position = posForIndex(4)}):Play()
 		end
 	end
 
@@ -2957,6 +4187,9 @@ local function createESPGui()
 	end)
 	playerBtn.MouseButton1Click:Connect(function()
 		setActiveSection("Player")
+	end)
+	gameBtn.MouseButton1Click:Connect(function()
+		setActiveSection("Game")
 	end)
 
 	setActiveSection("Home")
@@ -2990,7 +4223,7 @@ end
 -- Reapply improved/fullbright lighting after player respawn
 pcall(function()
 	if LocalPlayer then
-		LocalPlayer.CharacterAdded:Connect(function()
+		localPlayerRespawnConn = LocalPlayer.CharacterAdded:Connect(function()
 			if IMPROVED_LIGHTING_ENABLED then
 				pcall(function()
 					dofullbright()
@@ -3016,7 +4249,7 @@ end
 local mouseVisible = false
 setMouseVisible(false)
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
+insertToggleConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	if input.KeyCode == Enum.KeyCode.Insert then
 		if not SCREEN_GUI then
