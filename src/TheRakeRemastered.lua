@@ -6,7 +6,7 @@ local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 
--- Script active flag and stored connection refs for clean unload
+-- Script active flag
 local SCRIPT_ACTIVE = true
 local workspaceChildAddedConn = nil
 local workspaceDescendantAddedConn = nil
@@ -76,7 +76,7 @@ local RAKE_METER = {
 }
 
 local function findRakeModel()
-	-- Prefer an exact match to a top-level instance named "Rake" (same as rake_meter.lua)
+	-- Prefer an exact match
 	local direct = Workspace:FindFirstChild("Rake")
 	if direct and direct:IsA("Model") then
 		return direct
