@@ -4,6 +4,8 @@
 --  DM on Discord for requests: primesto.fx // therealowner69
 -- ────────────────────────────────────────────────────────────────
 
+-- ** This script should not be used by normal players, it is in beta state
+--    and may be buggy. Wait for an official release. **
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -404,7 +406,7 @@ local function makeDropDownList(parent, labelText, items, defaultIndex)
         end,
         Get = function() return selected end,
         SetSelected = function(idx, on)
-            selectedIndices[idx] = not not on
+            selectedIndices[idx] = (on == true)
             if btnRefs[idx] then
                 if selectedIndices[idx] then
                     btnRefs[idx].BackgroundTransparency = 0.9
@@ -414,7 +416,7 @@ local function makeDropDownList(parent, labelText, items, defaultIndex)
                 end
             end
         end,
-        IsSelected = function(idx) return not not selectedIndices[idx] end,
+        IsSelected = function(idx) return selectedIndices[idx] == true end,
         OnSelect = nil,
     }
 
@@ -633,7 +635,7 @@ local textBackgroundToggle = makeToggle(visualTab.LeftCol, "Location Background"
 
 -- ** Loc marker places dropdown
 local locationItems = { "Safe House", "Base Camp", "Observation Tower", "Power Station", "Shop" }
-    local locationDropdown = makeDropDownList(visualTab.LeftCol, "Select Locations", locationItems)
+    local locationDropdown = makeDropDownList(visualTab.LeftCol, "Location Marker Places", locationItems)
 
 
 -- ** Save Visuals to config
@@ -953,7 +955,11 @@ end
 
 local markers = {}
 
--- container folder for markers to avoid cluttering Workspace
+local textBackgroundEnabled = GetConfig("visuals.textBackground", false)
+local tbApiInit = ToggleAPI[textBackgroundToggle]
+if tbApiInit then
+    textBackgroundEnabled = tbApiInit.Get()
+end
 local markersFolder = Workspace:FindFirstChild("TemptMarkers")
 if not markersFolder then
     markersFolder = Instance.new("Folder")
@@ -986,7 +992,7 @@ local function createMarker(def)
 
     local label = Instance.new("TextLabel")
     label.Size = UDim2.new(1, 0, 1, 0)
-    label.BackgroundTransparency = bgEnabled and 0 or 1
+    label.BackgroundTransparency = textBackgroundEnabled and 0 or 1
     label.BackgroundColor3 = COLORS.panelDark
     label.Font = Enum.Font.GothamBold
     label.TextSize = 18
@@ -995,15 +1001,15 @@ local function createMarker(def)
     label.TextScaled = true
     label.Parent = gui
 
-    markers[def.id] = { part = part, gui = gui }
+    markers[def.id] = { part = part, gui = gui, label = label }
 end
 
 local function destroyMarker(id)
     local m = markers[id]
     if not m then return end
     pcall(function()
-        if m.gui and m.gui.Parent then m.gui:Destroy() end
-        if m.part and m.part.Parent then m.part:Destroy() end
+        if m.gui then m.gui:Destroy() end
+        if m.part then m.part:Destroy() end
     end)
     markers[id] = nil
 end
@@ -1014,7 +1020,7 @@ local function refreshMarkers()
     if lmApi then globalEnabled = lmApi.Get() else globalEnabled = GetConfig("visuals.locationMarkers", false) end
 
     for _, def in ipairs(MARKER_DEFS) do
-        local enabled = locStates[def.id]
+        local enabled = locStates[def.id] == true
         if enabled and globalEnabled then
             createMarker(def)
         else
@@ -1023,8 +1029,9 @@ local function refreshMarkers()
     end
 end
 
+----------------- Break for UI ----------------------
+
 -- ** UI for location markers
--- build a names list from defs (avoid reusing `locationItems` variable name)
 local markerNames = {}
 for _, d in ipairs(MARKER_DEFS) do table.insert(markerNames, d.name) end
 
@@ -1034,13 +1041,13 @@ if locApi then
     locApi.OnSelect = function(index, value)
         local def = MARKER_DEFS[index]
         if not def then return end
-        locStates[def.id] = not locStates[def.id]
+        -- toggle explicitly as boolean
+        locStates[def.id] = not (locStates[def.id] == true)
         SetConfig("visuals.locationMarkers", locStates)
         refreshMarkers()
     end
-    -- initialize dropdown visuals to match saved location states
     for i, def in ipairs(MARKER_DEFS) do
-        locApi.SetSelected(i, not not locStates[def.id])
+        locApi.SetSelected(i, locStates[def.id] == true)
     end
 end
 
@@ -1059,17 +1066,21 @@ do
         local prev2 = tbApi.OnToggle
         tbApi.OnToggle = function(s)
             if prev2 then pcall(prev2, s) end
-            -- update existing markers' background
+            textBackgroundEnabled = (s == true)
+            local desired = textBackgroundEnabled and 0 or 1
             for _, def in ipairs(MARKER_DEFS) do
                 local m = markers[def.id]
-                if m and m.gui then
-                    local label = m.gui:FindFirstChildOfClass("TextLabel")
-                    if label then label.BackgroundTransparency = s and 0 or 1 end
+                if m and m.label then
+                    if m.label.BackgroundTransparency ~= desired then
+                        m.label.BackgroundTransparency = desired
+                    end
                 end
             end
         end
     end
 end
+
+------------------ Break for Unload ----------------------
 
 refreshMarkers()
 
@@ -1077,10 +1088,12 @@ refreshMarkers()
 if _G and _G.TemptUI and type(_G.TemptUI.RegisterUnload) == "function" then
     _G.TemptUI.RegisterUnload(function()
         for _, d in ipairs(MARKER_DEFS) do destroyMarker(d.id) end
-        -- remove markers folder if empty / exists
         pcall(function()
             if markersFolder and markersFolder.Parent then markersFolder:Destroy() end
         end)
     end)
 end
 
+-- ** Location Markers Logic Ends Here ** --
+
+--------------------------------------------------------------------------
