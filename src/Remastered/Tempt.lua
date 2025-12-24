@@ -4326,7 +4326,6 @@ do
         for _,d in ipairs(model:GetDescendants()) do
             if d and d:IsA("BasePart") and (d.Name == "HitBox" or d.Name:lower():find("hit")) then return d end
         end
-        -- ** fallback to PrimaryPart or any BasePart
         if model.PrimaryPart and model.PrimaryPart:IsA("BasePart") then return model.PrimaryPart end
         for _,d in ipairs(model:GetDescendants()) do if d and d:IsA("BasePart") then return d end end
         return nil
@@ -4515,6 +4514,9 @@ do
         end
         trapRootConn = Workspace.DescendantAdded:Connect(function(c)
             if not c then return end
+            local debrisRoot = Workspace:FindFirstChild("Debris")
+            if not debrisRoot then return end
+            if not c:IsDescendantOf(debrisRoot) then return end
             if (c.Name == "Traps") and (c:IsA("Model") or c:IsA("Folder")) then
                 if not trapChildConns[c] then
                     local tr = c
@@ -4532,7 +4534,7 @@ do
                         end
                         if target and target:IsA("Model") then
                             pcall(function() makeTrapVisual(target) end)
-                            if not entries[target] then scheduleTrapAttempworkspace.Debris.Trapsts(target) end
+                            if not entries[target] then scheduleTrapAttempts(target) end
                         end
                     end)
                     trapChildConns[tr] = conn
@@ -4542,13 +4544,14 @@ do
         if not trapGenericConn then
             trapGenericConn = Workspace.DescendantAdded:Connect(function(desc)
                 if not desc then return end
+                local debrisRoot = Workspace:FindFirstChild("Debris")
+                if not debrisRoot then return end
+                local trapsRootLocal = debrisRoot:FindFirstChild("Traps")
+                if not trapsRootLocal then return end
+
                 local function addCandidate(mdl)
                     if not mdl or not mdl:IsA("Model") then return end
                     if trapCandidates[mdl] then return end
-                    local debrisRoot = Workspace:FindFirstChild("Debris")
-                    if not debrisRoot then return end
-                    local trapsRootLocal = debrisRoot:FindFirstChild("Traps")
-                    if not trapsRootLocal then return end
                     if not mdl:IsDescendantOf(trapsRootLocal) then return end
                     trapCandidates[mdl] = true
                     table.insert(trapCandidateList, mdl)
@@ -4556,7 +4559,7 @@ do
 
                 if desc:IsA("Model") then
                     local nm = (desc.Name or ""):lower()
-                    if nm:find("trap") then
+                    if nm:find("trap") and desc:IsDescendantOf(trapsRootLocal) then
                         addCandidate(desc)
                         if not entries[desc] and not trapMap[desc] then
                             pcall(function() makeTrapVisual(desc) end)
@@ -4569,7 +4572,7 @@ do
                         local cur = desc.Parent
                         for i=1,8 do if not cur then break end; if cur:IsA("Model") then break end; cur = cur.Parent end
                         local mdl = (cur and cur:IsA("Model") and cur) or desc.Parent
-                        if mdl and mdl:IsA("Model") then
+                        if mdl and mdl:IsA("Model") and mdl:IsDescendantOf(trapsRootLocal) then
                             addCandidate(mdl)
                             if not entries[mdl] and not trapMap[mdl] then
                                 pcall(function() makeTrapVisual(mdl) end)
@@ -4677,7 +4680,6 @@ do
         trapGenericConn = nil
         if trapGenericRemConn and trapGenericRemConn.Disconnect then trapGenericRemConn:Disconnect() end
         trapGenericRemConn = nil
-        -- clear candidate lists
         for k,_ in pairs(trapCandidates) do trapCandidates[k] = nil end
         trapCandidateList = {}
         trapCandidateIndex = 0
