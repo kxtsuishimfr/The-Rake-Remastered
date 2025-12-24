@@ -60,7 +60,7 @@ local COLORS = {
 }
 
 local player = Players.LocalPlayer
-local FIRST_TAB = nil -- ** for initial tab selection
+local FIRST_TAB = nil -- ** select first tab
 local gui = Instance.new("ScreenGui")
 gui.Name = "SCREEN_GUI"
 gui.ResetOnSpawn = false
@@ -1484,14 +1484,14 @@ local showGUIOnLoadToggle = makeToggle(settingsTab.LeftCol, "Show GUI on load")
 local autoScaleESPNameToggle = makeToggle(settingsTab.RightCol, "Auto-Scale ESP Name")
 local autoHideWhenRakeCloseToggle = makeToggle(settingsTab.RightCol, "Auto-hide when Rake is close")
 local enableNotificationsToggle = makeToggle(settingsTab.LeftCol, "Enable Notifications")
-local animateGUIOnOpenCloseToggle = makeToggle(settingsTab.LeftCol, "Animate GUI on open/close")
+local animateGUIOnOpenCloseToggle = makeToggle(settingsTab.LeftCol, "Animate GUI on open")
 
 -- ** Save Settings to config
 BindToggleToConfig(showGUIOnLoadToggle, "settings.showGUIOnLoad", true)
 BindToggleToConfig(autoScaleESPNameToggle, "settings.autoScaleESPName", false)
 BindToggleToConfig(autoHideWhenRakeCloseToggle, "settings.autoHideWhenRakeClose", false)
 BindToggleToConfig(enableNotificationsToggle, "settings.enableNotifications", true)
-BindToggleToConfig(animateGUIOnOpenCloseToggle, "settings.animateGUIOnOpenClose", true)
+BindToggleToConfig(animateGUIOnOpenCloseToggle, "settings.animateGUIOnOpenClose", false)
 
 
 -------------------- Break for Close/Open --------------------
@@ -5438,6 +5438,104 @@ do
     end
 end
 -- ** Game Timer Display Logic Ends Here ** --
+
+--------------------------------------------------------------------------
+
+-- ** Animate GUI Logic Starts Here ** --
+
+do
+    local animConn
+    local suppressAnim = false
+    local animateApi
+    pcall(function() animateApi = ToggleAPI[animateGUIOnOpenCloseToggle] end)
+    local function ensure(u, n, v)
+        if not u then return nil end
+        local s = u:FindFirstChild(n)
+        if not s then
+            s = Instance.new("UIScale")
+            s.Name = n
+            s.Parent = u
+            s.Scale = v
+        end
+        return s
+    end
+
+    local function openAnim()
+        pcall(function()
+            local master = ensure(root, "__anim_master", 0)
+            master.Scale = 0
+            local all = {}
+            for _,v in ipairs(root:GetDescendants()) do
+                if v:IsA("GuiObject") or v:IsA("Frame") or v:IsA("TextLabel") or v:IsA("TextButton") or v:IsA("ImageLabel") or v:IsA("ImageButton") then
+                    table.insert(all, v)
+                end
+            end
+            for _,c in ipairs(all) do
+                ensure(c, "__anim_child", 0).Scale = 0
+            end
+            local t1 = TweenService:Create(master, TweenInfo.new(0.26, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), {Scale = 1.08})
+            local t2 = TweenService:Create(master, TweenInfo.new(0.12, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Scale = 1})
+            t1:Play()
+            t1.Completed:Connect(function() t2:Play() end)
+            for i,c in ipairs(all) do
+                local cs = c:FindFirstChild("__anim_child")
+                if cs then
+                    delay(0.002 * (i-1), function()
+                        TweenService:Create(cs, TweenInfo.new(0.18, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {Scale = 1}):Play()
+                    end)
+                end
+            end
+        end)
+    end
+
+    local function closeAnim()
+        pcall(function()
+            local master = ensure(root, "__anim_master", 1)
+            local all = {}
+            for _,v in ipairs(root:GetDescendants()) do
+                if v:IsA("GuiObject") or v:IsA("Frame") or v:IsA("TextLabel") or v:IsA("TextButton") or v:IsA("ImageLabel") or v:IsA("ImageButton") then
+                    table.insert(all, v)
+                end
+            end
+            for i,c in ipairs(all) do
+                local cs = ensure(c, "__anim_child", 1)
+                delay(0.002 * (i-1), function()
+                    TweenService:Create(cs, TweenInfo.new(0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Scale = 0}):Play()
+                end)
+            end
+            local masterTween = TweenService:Create(master, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Scale = 0})
+            suppressAnim = true
+            masterTween:Play()
+            masterTween.Completed:Connect(function()
+                pcall(function() gui.Enabled = false end)
+                suppressAnim = false
+            end)
+        end)
+    end
+
+    if gui and gui.GetPropertyChangedSignal then
+        animConn = gui:GetPropertyChangedSignal("Enabled"):Connect(function()
+            if suppressAnim then return end
+            if animateApi and type(animateApi.Get) == "function" and not animateApi.Get() then
+                return
+            end
+            if gui.Enabled then openAnim() else closeAnim() end
+        end)
+    end
+
+    local function cleanup()
+        pcall(function() if animConn and animConn.Disconnect then animConn:Disconnect() end end)
+        animConn = nil
+    end
+    if _G and _G.TemptUI and type(_G.TemptUI.RegisterUnload) == "function" then
+        _G.TemptUI.RegisterUnload(cleanup)
+    else
+        pcall(function() RegisterUnload(cleanup) end)
+    end
+end
+
+
+-- ** Animate GUI Logic Ends Here ** --
 
 
 -- ────────────────────────────────────────────────────────────────────
