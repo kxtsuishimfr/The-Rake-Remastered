@@ -155,7 +155,7 @@ local function makeTab(name, tabsParent, pagesParent, onSelect, colHeaders)
     local list = Instance.new("UIListLayout") list.Parent = leftCol
     list.SortOrder = Enum.SortOrder.LayoutOrder
 
-    -- Header for left col
+    -- ** Header for left col
     if colHeaders and colHeaders.Left then
         local hdr = Instance.new("TextLabel")
         hdr.Name = "Header"
@@ -241,7 +241,7 @@ local function makeTab(name, tabsParent, pagesParent, onSelect, colHeaders)
         end,
     }
 
-    -- record first created tab for initial selection
+    -- record the first tab created
     pcall(function()
         if FIRST_TAB == nil then
             FIRST_TAB = { button = btn, page = page }
@@ -419,7 +419,7 @@ local function makeNotification(text, duration, parent)
     local cCorner = Instance.new("UICorner") cCorner.CornerRadius = UDim.new(0,10) cCorner.Parent = container
     local cStroke = Instance.new("UIStroke") cStroke.Color = COLORS.divider; cStroke.Thickness = 1; cStroke.Parent = container
 
-    -- accent bar
+    -- ** accent bar
     local accent = Instance.new("Frame")
     accent.Size = UDim2.new(0, 6, 1, 0)
     accent.Position = UDim2.new(0, 0, 0, 0)
@@ -461,7 +461,7 @@ local function makeNotification(text, duration, parent)
     label.ZIndex = inner.ZIndex + 1
     label.Parent = inner
 
-    -- progress bar
+    -- ** progress bar
     local barHolder = Instance.new("Frame")
     barHolder.Size = UDim2.new(1, -20, 0, 6)
     barHolder.Position = UDim2.new(0, 10, 1, -10)
@@ -479,23 +479,23 @@ local function makeNotification(text, duration, parent)
     prog.Parent = barHolder
     local progCorner = Instance.new("UICorner") progCorner.CornerRadius = UDim.new(0,3) progCorner.Parent = prog
 
-    -- entrance animation (pop)
+    -- ** entrance animation (pop)
     pcall(function()
         container.Size = UDim2.new(0, 420, 0, 0)
         container.Position = container.Position
         TweenService:Create(container, TweenInfo.new(0.34, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), {Size = UDim2.new(0, 420, 0, 56)}):Play()
-        -- fade/slide inner
+        -- ** fade/slide inner
         label.TextTransparency = 1
         icon.TextTransparency = 1
         TweenService:Create(label, TweenInfo.new(0.28, Enum.EasingStyle.Quad), {TextTransparency = 0}):Play()
         TweenService:Create(icon, TweenInfo.new(0.28, Enum.EasingStyle.Quad), {TextTransparency = 0}):Play()
     end)
 
-    -- prog bar tween
+    -- ** prog bar tween
     local progTween = TweenService:Create(prog, TweenInfo.new(dur, Enum.EasingStyle.Linear), {Size = UDim2.new(0, 0, 1, 0)})
     progTween:Play()
 
-    -- auto destroy after duration with exit animation
+    -- ** auto destroy after duration with exit animation
     task.delay(dur, function()
         pcall(function()
             TweenService:Create(label, TweenInfo.new(0.22, Enum.EasingStyle.Quad), {TextTransparency = 1}):Play()
@@ -939,7 +939,6 @@ local function makeDropDownList(parent, labelText, items, defaultIndex)
     drop.BackgroundColor3 = COLORS.panelAlt
     drop.ClipsDescendants = true
     drop.Visible = false
-    -- ensure dropdown draws above other UI (use a safe explicit ZIndex)
     local DROP_ZINDEX = 50
     drop.ZIndex = DROP_ZINDEX
     drop.Parent = frame
@@ -1254,7 +1253,6 @@ local function showUnloadConfirm()
     if root:FindFirstChild("UnloadConfirm") then return end
     local overlay = Instance.new("Frame")
     overlay.Name = "UnloadOverlay"
-    -- oversize the overlay so it fully covers the screen even with odd scaling
     overlay.Size = UDim2.new(2, 0, 2, 0)
     overlay.Position = UDim2.new(-0.5, 0, -0.5, 0)
     overlay.BackgroundColor3 = Color3.new(0,0,0)
@@ -1649,17 +1647,14 @@ local function RunUnload()
     pcall(function()
         if gui and gui.Parent then gui:Destroy() end
     end)
-    -- Final forced cleanup: remove any lingering Tempt visuals across Workspace and GUIs
     pcall(function()
         local Players = game:GetService("Players")
         local CoreGui = game:GetService("CoreGui")
-        -- sweep Workspace and all game descendants for any stray Tempt visuals
         for _, obj in ipairs(game:GetDescendants()) do
             if obj and (obj.Name == "Tempt_ScrapHL" or obj.Name == "Tempt_ScrapBB" or obj.Name == "Tempt_SupplyHL" or obj.Name == "Tempt_SupplyBB" or obj.Name == "Tempt_FlareHL" or obj.Name == "Tempt_FlareBB" or obj.Name == "Tempt_TrapsHL" or obj.Name == "Tempt_TrapsBB" or obj.Name == "TemptESP_Highlight") then
                 pcall(function() obj:Destroy() end)
             end
         end
-        -- also ensure PlayerGui/CoreGui billboards removed
         local lp = Players.LocalPlayer
         if lp then
             local pg = lp:FindFirstChild("PlayerGui")
@@ -4109,13 +4104,11 @@ do
         entries = {}
         if renderConn and renderConn.Disconnect then renderConn:Disconnect() end
         renderConn = nil
-        -- ensure FlareFinder visuals cleaned up via central unload
         pcall(function() if FlareFinder and FlareFinder.unload then FlareFinder.unload() end end)
         for _,obj in ipairs(Workspace:GetDescendants()) do
             if obj and obj.Name == "Tempt_ScrapHL" then pcall(function() obj:Destroy() end) end
             if obj and obj.Name == "Tempt_ScrapBB" then pcall(function() obj:Destroy() end) end
         end
-        -- ensure SupplyFinder visuals cleaned up as well
         pcall(function() if SupplyFinder and SupplyFinder.unload then SupplyFinder.unload() end end)
         if gui then
             for _,obj in ipairs(gui:GetDescendants()) do
