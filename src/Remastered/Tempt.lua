@@ -36,12 +36,12 @@ local RECENT_NOTIFS = setmetatable({}, { __mode = "k" })
 
 -- ** Model tracking ** --
 
-local supplyConns = setmetatable({}, { __mode = "k" }) -- ** deprecated
-local scrapConns = setmetatable({}, { __mode = "k" }) -- deprecated
+local supplyConns = setmetatable({}, { __mode = "k" }) -- ** deprecated, leave here
+local scrapConns = setmetatable({}, { __mode = "k" }) -- ** deprecated, leave here
 
 ---------------------------------------------------------------------------
 
--- ** Color palette (GUI) **
+-- ** Color palette (Screen_GUI) **
 local COLORS = {
     bg = Color3.fromRGB(26,26,26),
     panel = Color3.fromRGB(30,30,30),
@@ -60,6 +60,7 @@ local COLORS = {
 }
 
 local player = Players.LocalPlayer
+local FIRST_TAB = nil -- ** for initial tab selection
 local gui = Instance.new("ScreenGui")
 gui.Name = "SCREEN_GUI"
 gui.ResetOnSpawn = false
@@ -87,6 +88,18 @@ local function makeTab(name, tabsParent, pagesParent, onSelect, colHeaders)
     btn.Text = name
     btn.BackgroundColor3 = COLORS.bg
     btn.TextColor3 = COLORS.tabText
+    btn.BorderSizePixel = 0
+
+    -- ** active tab indicator
+    local indicator = Instance.new("Frame")
+    indicator.Name = "ActiveIndicator"
+    indicator.Size = UDim2.new(1, -16, 0, 4)
+    indicator.Position = UDim2.new(0, 8, 1, -10)
+    indicator.BackgroundColor3 = COLORS.accent
+    indicator.BackgroundTransparency = 1
+    indicator.ZIndex = btn.ZIndex - 1
+    local indCorner = Instance.new("UICorner") indCorner.CornerRadius = UDim.new(0, 4) indCorner.Parent = indicator
+    indicator.Parent = btn
 
     local page = Instance.new("Frame")
     page.Name = name .. "Page"
@@ -113,6 +126,18 @@ local function makeTab(name, tabsParent, pagesParent, onSelect, colHeaders)
 
     btn.MouseButton1Click:Connect(function()
         if type(onSelect) == "function" then pcall(onSelect, btn, page) end
+    end)
+
+    -- ** Hover thing
+    btn.MouseEnter:Connect(function()
+        local isActive = (btn.TextColor3 == COLORS.white)
+        local target = isActive and COLORS.accentHover or COLORS.panelAlt
+        pcall(function() TweenService:Create(btn, TweenInfo.new(0.12), {BackgroundColor3 = target}):Play() end)
+    end)
+    btn.MouseLeave:Connect(function()
+        local isActive = (btn.TextColor3 == COLORS.white)
+        local target = isActive and COLORS.accent or COLORS.panel
+        pcall(function() TweenService:Create(btn, TweenInfo.new(0.12), {BackgroundColor3 = target}):Play() end)
     end)
 
 ---------------------------------------------------------------------------------
@@ -215,6 +240,13 @@ local function makeTab(name, tabsParent, pagesParent, onSelect, colHeaders)
             return col
         end,
     }
+
+    -- record first created tab for initial selection
+    pcall(function()
+        if FIRST_TAB == nil then
+            FIRST_TAB = { button = btn, page = page }
+        end
+    end)
 
     return tab
 end
@@ -321,7 +353,6 @@ local function makeNotification(text, duration, parent)
         local Players = game:GetService("Players")
         local CoreGui = game:GetService("CoreGui")
         local lp = Players and Players.LocalPlayer
-        -- if caller provided a parent and it's NOT the main `gui` (SCREEN_GUI), use it
         if parent and parent ~= gui then
             parentGui = parent
         else
@@ -386,32 +417,54 @@ local function makeNotification(text, duration, parent)
     container.LayoutOrder = math.floor(tick() * 1000)
     container.Parent = holder
     local cCorner = Instance.new("UICorner") cCorner.CornerRadius = UDim.new(0,10) cCorner.Parent = container
+    local cStroke = Instance.new("UIStroke") cStroke.Color = COLORS.divider; cStroke.Thickness = 1; cStroke.Parent = container
+
+    -- accent bar
+    local accent = Instance.new("Frame")
+    accent.Size = UDim2.new(0, 6, 1, 0)
+    accent.Position = UDim2.new(0, 0, 0, 0)
+    accent.BackgroundColor3 = COLORS.accent
+    accent.BorderSizePixel = 0
+    accent.ZIndex = container.ZIndex + 2
+    accent.Parent = container
+    local aCorner = Instance.new("UICorner") aCorner.CornerRadius = UDim.new(0,4) aCorner.Parent = accent
 
     local inner = Instance.new("Frame")
-    inner.Size = UDim2.new(1, -12, 1, -12)
-    inner.Position = UDim2.new(0,6,0,6)
+    inner.Size = UDim2.new(1, -20, 1, -12)
+    inner.Position = UDim2.new(0, 12, 0, 6)
     inner.BackgroundTransparency = 1
     inner.ZIndex = container.ZIndex + 1
     inner.Parent = container
 
+    local icon = Instance.new("TextLabel")
+    icon.Size = UDim2.new(0, 28, 0, 28)
+    icon.Position = UDim2.new(0, 0, 0.5, -14)
+    icon.BackgroundTransparency = 1
+    icon.Font = Enum.Font.GothamBold
+    icon.TextSize = 18
+    icon.TextColor3 = COLORS.accent
+    icon.Text = "🔔"
+    icon.ZIndex = inner.ZIndex + 1
+    icon.Parent = inner
+
     local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 1, -12)
-    label.Position = UDim2.new(0, 0, 0, 4)
+    label.Size = UDim2.new(1, -36, 1, 0)
+    label.Position = UDim2.new(0, 36, 0, 0)
     label.BackgroundTransparency = 1
     label.Font = Enum.Font.GothamBold
     label.TextSize = 16
     label.Text = tostring(text or "Notification")
     label.TextColor3 = COLORS.text
     label.TextStrokeTransparency = 0.7
-    label.TextXAlignment = Enum.TextXAlignment.Center
+    label.TextXAlignment = Enum.TextXAlignment.Left
     label.TextYAlignment = Enum.TextYAlignment.Center
-    label.ZIndex = container.ZIndex + 2
+    label.ZIndex = inner.ZIndex + 1
     label.Parent = inner
 
-    -- ** the progress bar
+    -- progress bar
     local barHolder = Instance.new("Frame")
-    barHolder.Size = UDim2.new(1, -12, 0, 6)
-    barHolder.Position = UDim2.new(0, 6, 1, -10)
+    barHolder.Size = UDim2.new(1, -20, 0, 6)
+    barHolder.Position = UDim2.new(0, 10, 1, -10)
     barHolder.BackgroundTransparency = 1
     barHolder.ZIndex = container.ZIndex + 1
     barHolder.Parent = container
@@ -420,29 +473,36 @@ local function makeNotification(text, duration, parent)
     prog.AnchorPoint = Vector2.new(1, 0)
     prog.Position = UDim2.new(1, 0, 0, 0)
     prog.Size = UDim2.new(1, 0, 1, 0)
-    prog.BackgroundColor3 = COLORS.white
+    prog.BackgroundColor3 = COLORS.accent
     prog.BorderSizePixel = 0
     prog.ZIndex = container.ZIndex + 2
     prog.Parent = barHolder
     local progCorner = Instance.new("UICorner") progCorner.CornerRadius = UDim.new(0,3) progCorner.Parent = prog
 
-    local ts = TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+    -- entrance animation (pop)
     pcall(function()
         container.Size = UDim2.new(0, 420, 0, 0)
-        TweenService:Create(container, TweenInfo.new(0.18, Enum.EasingStyle.Quad), {Size = UDim2.new(0, 420, 0, 56)}):Play()
+        container.Position = container.Position
+        TweenService:Create(container, TweenInfo.new(0.34, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), {Size = UDim2.new(0, 420, 0, 56)}):Play()
+        -- fade/slide inner
+        label.TextTransparency = 1
+        icon.TextTransparency = 1
+        TweenService:Create(label, TweenInfo.new(0.28, Enum.EasingStyle.Quad), {TextTransparency = 0}):Play()
+        TweenService:Create(icon, TweenInfo.new(0.28, Enum.EasingStyle.Quad), {TextTransparency = 0}):Play()
     end)
 
-    -- ** animate progress bar
+    -- prog bar tween
     local progTween = TweenService:Create(prog, TweenInfo.new(dur, Enum.EasingStyle.Linear), {Size = UDim2.new(0, 0, 1, 0)})
     progTween:Play()
 
-    -- ** auto destroy: shrink then remove
+    -- auto destroy after duration with exit animation
     task.delay(dur, function()
         pcall(function()
-            TweenService:Create(container, TweenInfo.new(0.22, Enum.EasingStyle.Quad), {Size = UDim2.new(0, 420, 0, 0), BackgroundTransparency = 1}):Play()
-            TweenService:Create(label, TweenInfo.new(0.22), {TextTransparency = 1, TextStrokeTransparency = 1}):Play()
+            TweenService:Create(label, TweenInfo.new(0.22, Enum.EasingStyle.Quad), {TextTransparency = 1}):Play()
+            TweenService:Create(icon, TweenInfo.new(0.22, Enum.EasingStyle.Quad), {TextTransparency = 1}):Play()
+            TweenService:Create(container, TweenInfo.new(0.28, Enum.EasingStyle.Quad), {Size = UDim2.new(0, 420, 0, 0)}):Play()
         end)
-        task.delay(0.26, function()
+        task.delay(0.32, function()
             pcall(function() container:Destroy() end)
         end)
     end)
@@ -845,17 +905,22 @@ local function makeDropDownList(parent, labelText, items, defaultIndex)
 
     local display = Instance.new("TextButton")
     display.Name = frame.Name .. "_Display"
-        display.Size = UDim2.new(0.4, -8, 1, 0)
+    display.Size = UDim2.new(0.4, -8, 1, 0)
     display.AnchorPoint = Vector2.new(1, 0)
     display.Position = UDim2.new(1, -8, 0, 0)
     display.BackgroundColor3 = COLORS.panelDark
-    display.AutoButtonColor = true
+    display.AutoButtonColor = false
     display.Font = Enum.Font.Gotham
     display.TextSize = 16
     display.TextColor3 = COLORS.text
     display.Text = ""
+    display.TextXAlignment = Enum.TextXAlignment.Left
     display.Parent = frame
     local displayCorner = Instance.new("UICorner") displayCorner.CornerRadius = UDim.new(0,6) displayCorner.Parent = display
+    local displayPad = Instance.new("UIPadding") displayPad.Parent = display
+    displayPad.PaddingLeft = UDim.new(0,8)
+    displayPad.PaddingRight = UDim.new(0,28)
+    display.Active = true
 
     local arrow = Instance.new("TextLabel")
     arrow.Size = UDim2.new(0, 24, 1, 0)
@@ -870,21 +935,30 @@ local function makeDropDownList(parent, labelText, items, defaultIndex)
 
     local drop = Instance.new("Frame")
     drop.Size = UDim2.new(1, 0, 0, 0)
-    drop.Position = UDim2.new(0, 0, 1, 4)
-    drop.BackgroundColor3 = COLORS.panel
+    drop.Position = UDim2.new(0, 0, 1, 6)
+    drop.BackgroundColor3 = COLORS.panelAlt
     drop.ClipsDescendants = true
     drop.Visible = false
+    -- ensure dropdown draws above other UI (use a safe explicit ZIndex)
+    local DROP_ZINDEX = 50
+    drop.ZIndex = DROP_ZINDEX
     drop.Parent = frame
-    local dropCorner = Instance.new("UICorner") dropCorner.CornerRadius = UDim.new(0,6) dropCorner.Parent = drop
+    local dropCorner = Instance.new("UICorner") dropCorner.CornerRadius = UDim.new(0,8) dropCorner.Parent = drop
+    local dropStroke = Instance.new("UIStroke") dropStroke.Thickness = 1; dropStroke.Color = COLORS.divider; dropStroke.Parent = drop
 
     local scroll = Instance.new("ScrollingFrame")
-    scroll.Size = UDim2.new(1, -8, 1, -8)
-    scroll.Position = UDim2.new(0, 4, 0, 4)
+    scroll.Size = UDim2.new(1, -12, 1, -12)
+    scroll.Position = UDim2.new(0, 6, 0, 6)
     scroll.BackgroundTransparency = 1
-    scroll.ScrollBarThickness = 6
+    scroll.ScrollBarThickness = 8
+    pcall(function() scroll.ScrollBarImageColor3 = COLORS.accent end)
     scroll.Parent = drop
+    scroll.ZIndex = DROP_ZINDEX
     local layout = Instance.new("UIListLayout") layout.Parent = scroll
     layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, 4)
+    local scrollPad = Instance.new("UIPadding") scrollPad.Parent = scroll
+    scrollPad.PaddingTop = UDim.new(0,4); scrollPad.PaddingBottom = UDim.new(0,4)
 
     items = items or {}
     local selected = nil
@@ -899,13 +973,16 @@ local function makeDropDownList(parent, labelText, items, defaultIndex)
             local btn = Instance.new("TextButton")
             btn.Size = UDim2.new(1, 0, 0, 28)
             btn.BackgroundTransparency = 1
-            btn.AutoButtonColor = true
+            btn.AutoButtonColor = false
             btn.Font = Enum.Font.Gotham
             btn.TextSize = 16
             btn.TextColor3 = COLORS.text
             btn.Text = tostring(v)
             btn.LayoutOrder = i
             btn.Parent = scroll
+            btn.ZIndex = DROP_ZINDEX + 1
+            local btnCorner = Instance.new("UICorner") btnCorner.CornerRadius = UDim.new(0,6) btnCorner.Parent = btn
+            local btnPad = Instance.new("UIPadding") btnPad.Parent = btn; btnPad.PaddingLeft = UDim.new(0,8)
 
             btnRefs[i] = btn
             selectedIndices[i] = false
@@ -914,18 +991,33 @@ local function makeDropDownList(parent, labelText, items, defaultIndex)
                 local b = btnRefs[idx]
                 if not b then return end
                 if selectedIndices[idx] then
-                    b.BackgroundTransparency = 0.9
+                    b.BackgroundTransparency = 0
                     b.BackgroundColor3 = COLORS.highlight
+                    b.TextColor3 = COLORS.white
                 else
                     b.BackgroundTransparency = 1
+                    b.BackgroundColor3 = COLORS.panel
+                    b.TextColor3 = COLORS.text
                 end
             end
 
+            btn.MouseEnter:Connect(function()
+                if selectedIndices[i] then return end
+                pcall(function() TweenService:Create(btn, TweenInfo.new(0.12), {BackgroundTransparency = 0, BackgroundColor3 = COLORS.panelAlt}):Play() end)
+            end)
+            btn.MouseLeave:Connect(function()
+                if selectedIndices[i] then return end
+                pcall(function() TweenService:Create(btn, TweenInfo.new(0.12), {BackgroundTransparency = 1}):Play() end)
+            end)
+
             btn.MouseButton1Click:Connect(function()
-                    selectedIndices[i] = not selectedIndices[i]
+                selectedIndices[i] = not selectedIndices[i]
                 updateBtnVisual(i)
                 selected = { index = i, value = v }
                 display.Text = tostring(v)
+                pcall(function() drop.Visible = false; TweenService:Create(drop, TweenInfo.new(0.12), {Size = UDim2.new(1,0,0,0)}):Play() end)
+                arrow.Text = "▾"
+                pcall(function() TweenService:Create(arrow, TweenInfo.new(0.12), {TextColor3 = COLORS.textDim}):Play() end)
                 local api = DropdownAPI[frame]
                 if api and type(api.OnSelect) == "function" then pcall(api.OnSelect, i, v, selectedIndices[i]) end
             end)
@@ -935,7 +1027,23 @@ local function makeDropDownList(parent, labelText, items, defaultIndex)
     end
 
     display.MouseButton1Click:Connect(function()
-        drop.Visible = not drop.Visible
+        local open = not drop.Visible
+        local total = #items * 28
+        local target = math.min(total, 200)
+        if open then
+            drop.Visible = true
+            TweenService:Create(drop, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1,0,0,target)}):Play()
+            arrow.Text = "▴"
+            pcall(function() TweenService:Create(arrow, TweenInfo.new(0.18), {TextColor3 = COLORS.accent}):Play() end)
+        else
+            local tween = TweenService:Create(drop, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(1,0,0,0)})
+            tween:Play()
+            tween.Completed:Connect(function()
+                pcall(function() drop.Visible = false end)
+            end)
+            arrow.Text = "▾"
+            pcall(function() TweenService:Create(arrow, TweenInfo.new(0.12), {TextColor3 = COLORS.textDim}):Play() end)
+        end
     end)
 
     -- API
@@ -946,9 +1054,24 @@ local function makeDropDownList(parent, labelText, items, defaultIndex)
             if v ~= nil then
                 selected = { index = idx, value = v }
                 display.Text = tostring(v)
-                for k,_ in pairs(selectedIndices) do selectedIndices[k] = false end
+                for k,_ in pairs(selectedIndices) do
+                    selectedIndices[k] = false
+                    if btnRefs[k] then
+                        pcall(function()
+                            btnRefs[k].BackgroundTransparency = 1
+                            btnRefs[k].BackgroundColor3 = COLORS.panel
+                            btnRefs[k].TextColor3 = COLORS.text
+                        end)
+                    end
+                end
                 selectedIndices[idx] = true
-                if btnRefs[idx] then btnRefs[idx].BackgroundTransparency = 0.9; btnRefs[idx].BackgroundColor3 = COLORS.highlight end
+                if btnRefs[idx] then
+                    pcall(function()
+                        btnRefs[idx].BackgroundTransparency = 0
+                        btnRefs[idx].BackgroundColor3 = COLORS.highlight
+                        btnRefs[idx].TextColor3 = COLORS.white
+                    end)
+                end
             end
         end,
         Get = function() return selected end,
@@ -956,10 +1079,17 @@ local function makeDropDownList(parent, labelText, items, defaultIndex)
             selectedIndices[idx] = (on == true)
             if btnRefs[idx] then
                 if selectedIndices[idx] then
-                    btnRefs[idx].BackgroundTransparency = 0.9
-                    btnRefs[idx].BackgroundColor3 = COLORS.highlight
+                    pcall(function()
+                        btnRefs[idx].BackgroundTransparency = 0
+                        btnRefs[idx].BackgroundColor3 = COLORS.highlight
+                        btnRefs[idx].TextColor3 = COLORS.white
+                    end)
                 else
-                    btnRefs[idx].BackgroundTransparency = 1
+                    pcall(function()
+                        btnRefs[idx].BackgroundTransparency = 1
+                        btnRefs[idx].BackgroundColor3 = COLORS.panel
+                        btnRefs[idx].TextColor3 = COLORS.text
+                    end)
                 end
             end
         end,
@@ -1116,64 +1246,123 @@ local tabsUnderCorner = Instance.new("UICorner") tabsUnderCorner.CornerRadius = 
 tabsUnderlay.ZIndex = 1
 tabsBar.ZIndex = 2
 
+
 ---------------------------------------------------------------------------
 
 -- ** close / unload UI
 local function showUnloadConfirm()
     if root:FindFirstChild("UnloadConfirm") then return end
+    local overlay = Instance.new("Frame")
+    overlay.Name = "UnloadOverlay"
+    -- oversize the overlay so it fully covers the screen even with odd scaling
+    overlay.Size = UDim2.new(2, 0, 2, 0)
+    overlay.Position = UDim2.new(-0.5, 0, -0.5, 0)
+    overlay.BackgroundColor3 = Color3.new(0,0,0)
+    overlay.BackgroundTransparency = 0.45
+    overlay.ZIndex = 10000
+    overlay.Parent = gui
+
     local pop = Instance.new("Frame")
     pop.Name = "UnloadConfirm"
-    pop.Size = UDim2.new(0, 360, 0, 140)
-    pop.Position = UDim2.new(0.5, -180, 0.5, -70)
+    pop.Size = UDim2.new(0, 380, 0, 152)
+    pop.Position = UDim2.new(0.5, 0, 0.5, 0)
     pop.AnchorPoint = Vector2.new(0.5, 0.5)
     pop.BackgroundColor3 = COLORS.panel
-    pop.Parent = root
-    local pc = Instance.new("UICorner") pc.CornerRadius = UDim.new(0,8) pc.Parent = pop
+    pop.BorderSizePixel = 0
+    pop.ZIndex = 10001
+    pop.Parent = gui
+    local pc = Instance.new("UICorner") pc.CornerRadius = UDim.new(0,10) pc.Parent = pop
+    local stroke = Instance.new("UIStroke") stroke.Color = COLORS.divider; stroke.Thickness = 1; stroke.Parent = pop
+
+    local header = Instance.new("Frame")
+    header.Name = "Header"
+    header.Size = UDim2.new(1, 0, 0, 40)
+    header.Position = UDim2.new(0, 0, 0, 0)
+    header.BackgroundColor3 = COLORS.bg
+    header.ZIndex = pop.ZIndex + 1
+    header.Parent = pop
+    local hCorner = Instance.new("UICorner") hCorner.CornerRadius = UDim.new(0,8) hCorner.Parent = header
+
+    local icon = Instance.new("TextLabel")
+    icon.Size = UDim2.new(0, 36, 1, 0)
+    icon.Position = UDim2.new(0, 10, 0, 0)
+    icon.BackgroundTransparency = 1
+    icon.Font = Enum.Font.GothamBold
+    icon.TextSize = 20
+    icon.TextColor3 = COLORS.accent
+    icon.Text = "⚠"
+    icon.TextXAlignment = Enum.TextXAlignment.Center
+    icon.ZIndex = header.ZIndex + 1
+    icon.Parent = header
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -56, 1, 0)
+    title.Position = UDim2.new(0, 56, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 16
+    title.TextColor3 = COLORS.text
+    title.Text = "Confirm Unload"
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.ZIndex = header.ZIndex + 1
+    title.Parent = header
 
     local msg = Instance.new("TextLabel")
-    msg.Size = UDim2.new(1, -24, 0, 64)
-    msg.Position = UDim2.new(0,12,0,12)
+    msg.Size = UDim2.new(1, -24, 0, 72)
+    msg.Position = UDim2.new(0,12,0,48)
     msg.BackgroundTransparency = 1
-    msg.Font = Enum.Font.GothamBold
-    msg.TextSize = 18
-    msg.TextColor3 = COLORS.text
+    msg.Font = Enum.Font.Gotham
+    msg.TextSize = 16
+    msg.TextColor3 = COLORS.textDim
     msg.Text = "Are you sure you want to unload the script?"
     msg.TextWrapped = true
     msg.TextXAlignment = Enum.TextXAlignment.Center
+    msg.ZIndex = pop.ZIndex + 1
     msg.Parent = pop
 
     local btnNo = Instance.new("TextButton")
-    btnNo.Size = UDim2.new(0.44, -8, 0, 36)
-    btnNo.Position = UDim2.new(0, 12, 1, -48)
-    btnNo.BackgroundColor3 = COLORS.panelDark
+    btnNo.Size = UDim2.new(0.44, -8, 0, 40)
+    btnNo.Position = UDim2.new(0, 12, 1, -52)
+    btnNo.BackgroundColor3 = COLORS.bg
     btnNo.Font = Enum.Font.GothamBold
     btnNo.TextSize = 16
     btnNo.TextColor3 = COLORS.text
-    btnNo.Text = "No.."
+    btnNo.Text = "Cancel"
+    btnNo.ZIndex = pop.ZIndex + 1
     btnNo.Parent = pop
-    local noCorner = Instance.new("UICorner") noCorner.CornerRadius = UDim.new(0,6) noCorner.Parent = btnNo
+    local noCorner = Instance.new("UICorner") noCorner.CornerRadius = UDim.new(0,8) noCorner.Parent = btnNo
+    local noStroke = Instance.new("UIStroke") noStroke.Color = COLORS.divider; noStroke.Thickness = 1; noStroke.Parent = btnNo
+    btnNo.MouseEnter:Connect(function() TweenService:Create(btnNo, TweenInfo.new(0.12), {BackgroundColor3 = COLORS.panelAlt}):Play() end)
+    btnNo.MouseLeave:Connect(function() TweenService:Create(btnNo, TweenInfo.new(0.12), {BackgroundColor3 = COLORS.panel}):Play() end)
 
     local btnYes = Instance.new("TextButton")
-    btnYes.Size = UDim2.new(0.44, -8, 0, 36)
-    btnYes.Position = UDim2.new(1, -12 - (pop.Size.X.Offset * 0), 1, -48)
+    btnYes.Size = UDim2.new(0.44, -8, 0, 40)
+    btnYes.Position = UDim2.new(1, -12, 1, -52)
     btnYes.AnchorPoint = Vector2.new(1, 0)
-    btnYes.BackgroundColor3 = COLORS.panelDark
+    btnYes.BackgroundColor3 = COLORS.accent
     btnYes.Font = Enum.Font.GothamBold
     btnYes.TextSize = 16
-    btnYes.TextColor3 = COLORS.close
-    btnYes.Text = "Yes!"
+    btnYes.TextColor3 = COLORS.white
+    btnYes.Text = "Unload"
+    btnYes.ZIndex = pop.ZIndex + 1
     btnYes.Parent = pop
-    local yesCorner = Instance.new("UICorner") yesCorner.CornerRadius = UDim.new(0,6) yesCorner.Parent = btnYes
-    -- ** yes button hover color
-    btnYes.MouseEnter:Connect(function() btnYes.TextColor3 = COLORS.closeHover end)
-    btnYes.MouseLeave:Connect(function() btnYes.TextColor3 = COLORS.close end)
+    local yesCorner = Instance.new("UICorner") yesCorner.CornerRadius = UDim.new(0,8) yesCorner.Parent = btnYes
+    btnYes.MouseEnter:Connect(function() TweenService:Create(btnYes, TweenInfo.new(0.12), {BackgroundColor3 = COLORS.accentHover}):Play() end)
+    btnYes.MouseLeave:Connect(function() TweenService:Create(btnYes, TweenInfo.new(0.12), {BackgroundColor3 = COLORS.accent}):Play() end)
 
     btnNo.MouseButton1Click:Connect(function()
         pop:Destroy()
     end)
 
+    btnNo.MouseButton1Click:Connect(function()
+        if overlay and overlay.Parent then overlay:Destroy() end
+        pop:Destroy()
+    end)
+
     btnYes.MouseButton1Click:Connect(function()
-        -- ** call unload handlers then destroy GUI
+        if overlay and overlay.Parent then overlay:Destroy() end
+
+        -------------------- Break for Unload --------------------
         if type(_G) == "table" and _G.TemptUI and type(_G.TemptUI.RunUnload) == "function" then
             pcall(_G.TemptUI.RunUnload)
         end
@@ -1181,7 +1370,7 @@ local function showUnloadConfirm()
 end
 
 local closeBtn = Instance.new("TextButton")
-closeBtn.Name = "CloseBtn"
+closeBtn.Name = "CloseButton"
 closeBtn.Size = UDim2.new(0, 28, 0, 28)
 closeBtn.Position = UDim2.new(1, -36, 0, 6)
 closeBtn.AnchorPoint = Vector2.new(0,0)
@@ -1202,17 +1391,27 @@ end)
 
 -- ** tab selection
 local function selectTab(button, page)
+    local tweenInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
     for _,c in ipairs(tabsBar:GetChildren()) do
         if c:IsA("TextButton") then
-            c.TextColor3 = COLORS.textDim
-            c.Position = UDim2.new(c.Position.X.Scale, c.Position.X.Offset, 0, 6)
+            pcall(function()
+                local targetPos = UDim2.new(c.Position.X.Scale, c.Position.X.Offset, 0, 6)
+                TweenService:Create(c, tweenInfo, {TextColor3 = COLORS.textDim, Position = targetPos, BackgroundColor3 = COLORS.panel}):Play()
+                local ind = c:FindFirstChild("ActiveIndicator")
+                if ind then TweenService:Create(ind, tweenInfo, {BackgroundTransparency = 1}):Play() end
+            end)
         end
     end
     for _,p in ipairs(pages:GetChildren()) do
         if p:IsA("Frame") then p.Visible = false end
     end
-    button.TextColor3 = COLORS.white
-    button.Position = UDim2.new(button.Position.X.Scale, button.Position.X.Offset, 0, -4)
+    -- ** Active visual
+    pcall(function()
+        local tgtPos = UDim2.new(button.Position.X.Scale, button.Position.X.Offset, 0, -4)
+        TweenService:Create(button, tweenInfo, {TextColor3 = COLORS.white, Position = tgtPos, BackgroundColor3 = COLORS.accent}):Play()
+        local ind = button:FindFirstChild("ActiveIndicator")
+        if ind then TweenService:Create(ind, tweenInfo, {BackgroundTransparency = 0}):Play() end
+    end)
     page.Visible = true
 end
 
@@ -1223,23 +1422,30 @@ end
 -- Visuals Tab
 local visualTab = makeTab("Visuals", tabsBar, pages, selectTab, { Left = "General", Right = "Rake Related" })
 visualTab.page.Parent = pages
-selectTab(visualTab.button, visualTab.page)
 
 
 -- ** Player Tab
 local playerTab = makeTab("Player", tabsBar, pages, selectTab, { Left = "General", Right = "Advanced" })
 playerTab.page.Parent = pages
-selectTab(playerTab.button, playerTab.page)
 
 -- ** Game Tab
 local gameTab = makeTab("Game", tabsBar, pages, selectTab, { Left = "General", Right = "Advanced" })
 gameTab.page.Parent = pages
-selectTab(gameTab.button, gameTab.page)
 
--- Settings Tab
+-- ** Settings Tab
 local settingsTab = makeTab("Settings", tabsBar, pages, selectTab, { Left = "General", Right = "Advanced" })
 settingsTab.page.Parent = pages
-selectTab(settingsTab.button, settingsTab.page)
+
+
+-------------------- Break for Tab Selection --------------------
+
+
+-- ** Select first tab by default
+pcall(function()
+    if FIRST_TAB and FIRST_TAB.button and FIRST_TAB.page then
+        selectTab(FIRST_TAB.button, FIRST_TAB.page)
+    end
+end)
 
 
 -------------------------------------------------------------------------
@@ -1253,7 +1459,7 @@ local textBackgroundToggle = makeToggle(visualTab.LeftCol, "Location Background"
 local rakeMeterToggle = makeToggle(visualTab.RightCol, "Rake Meter") -- 5vst
 
 local locationItems = { "Safe House", "Base Camp", "Observation Tower", "Power Station", "Shop" }
-    local locationDropdown = makeDropDownList(visualTab.LeftCol, "Location Marker Places", locationItems)
+local locationDropdown = makeDropDownList(visualTab.LeftCol, "Location Marker Places", locationItems)
 
 local fullBrightToggle = makeToggle(visualTab.LeftCol, "Full Bright") -- 6vst
 local rakeHealthToggle = makeToggle(visualTab.RightCol, "Rake Health") -- 7vst
@@ -1275,15 +1481,17 @@ BindToggleToConfig(removeFogToggle, "visuals.removeFog", false)
 -- ** Settings Tab Stuff **
 
 local showGUIOnLoadToggle = makeToggle(settingsTab.LeftCol, "Show GUI on load")
-local autoScaleESPNameToggle = makeToggle(settingsTab.LeftCol, "Auto-Scale ESP Name")
+local autoScaleESPNameToggle = makeToggle(settingsTab.RightCol, "Auto-Scale ESP Name")
 local autoHideWhenRakeCloseToggle = makeToggle(settingsTab.RightCol, "Auto-hide when Rake is close")
 local enableNotificationsToggle = makeToggle(settingsTab.LeftCol, "Enable Notifications")
+local animateGUIOnOpenCloseToggle = makeToggle(settingsTab.LeftCol, "Animate GUI on open/close")
 
 -- ** Save Settings to config
 BindToggleToConfig(showGUIOnLoadToggle, "settings.showGUIOnLoad", true)
 BindToggleToConfig(autoScaleESPNameToggle, "settings.autoScaleESPName", false)
 BindToggleToConfig(autoHideWhenRakeCloseToggle, "settings.autoHideWhenRakeClose", false)
 BindToggleToConfig(enableNotificationsToggle, "settings.enableNotifications", true)
+BindToggleToConfig(animateGUIOnOpenCloseToggle, "settings.animateGUIOnOpenClose", true)
 
 
 -------------------- Break for Close/Open --------------------
@@ -1331,7 +1539,6 @@ do
         sApi.OnChange = function(v)
             if prev then pcall(prev, v) end
             pcall(function() SetConfig("player.speedValue", v) end)
-            -- apply immediately if toggle is enabled
             local tApi = ToggleAPI[playerSpeedToggle]
             local enabled = tApi and type(tApi.Get) == "function" and tApi.Get()
             if enabled then
