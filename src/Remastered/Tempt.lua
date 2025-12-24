@@ -321,7 +321,6 @@ local function makeNotification(text, duration, parent)
         local Players = game:GetService("Players")
         local CoreGui = game:GetService("CoreGui")
         local lp = Players and Players.LocalPlayer
-        -- if caller provided a parent and it's NOT the main `gui` (SCREEN_GUI), use it
         if parent and parent ~= gui then
             parentGui = parent
         else
