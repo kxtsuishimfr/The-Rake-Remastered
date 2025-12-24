@@ -59,11 +59,83 @@ local COLORS = {
     closeHover = Color3.fromRGB(220,50,50),
 }
 
+----------------------------------------------------------------------------
+
+-- ** Unsupported game check starts here **
+
+local function readSetting(key, default)
+    local ok, contents = pcall(function() return readfile("Tempt-Config.json") end)
+    if not ok or not contents then return default end
+    local success, decoded = pcall(function() return HttpService:JSONDecode(contents) end)
+    if not success or type(decoded) ~= "table" then return default end
+    local cur = decoded
+    for part in string.gmatch(key, "[^%.]+") do
+        if type(cur) ~= "table" then return default end
+        cur = cur[part]
+    end
+    if cur == nil then return default end
+    return cur
+end
+
+local warn = readSetting("settings.warnIfUnsupportedGame", true)
+if warn and game.PlaceId ~= 2413927524 then
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "Tempt_Unsupported"
+    sg.ResetOnSpawn = false
+    local okParent = pcall(function() sg.Parent = game:GetService("CoreGui") end)
+    if not okParent and Players.LocalPlayer then sg.Parent = Players.LocalPlayer:WaitForChild("PlayerGui") end
+
+    local overlay = Instance.new("Frame")
+    overlay.Size = UDim2.new(2,0,2,0)
+    overlay.Position = UDim2.new(-0.5,0,-0.5,0)
+    overlay.BackgroundColor3 = Color3.new(0,0,0)
+    overlay.BackgroundTransparency = 0.45
+    overlay.ZIndex = 10000
+    overlay.Parent = sg
+
+    local pop = Instance.new("Frame")
+    pop.Size = UDim2.new(0,420,0,160)
+    pop.Position = UDim2.new(0.5,0,0.5,0)
+    pop.AnchorPoint = Vector2.new(0.5,0.5)
+    pop.BackgroundColor3 = COLORS.panel
+    pop.BorderSizePixel = 0
+    pop.ZIndex = 10001
+    pop.Parent = sg
+    local pc = Instance.new("UICorner") pc.CornerRadius = UDim.new(0,10) pc.Parent = pop
+    local stroke = Instance.new("UIStroke") stroke.Color = COLORS.divider stroke.Thickness = 1 stroke.Parent = pop
+
+    local header = Instance.new("Frame") header.Size = UDim2.new(1,0,0,40) header.Position = UDim2.new(0,0,0,0) header.BackgroundColor3 = COLORS.bg header.ZIndex = pop.ZIndex + 1 header.Parent = pop
+    local icon = Instance.new("TextLabel") icon.Size = UDim2.new(0,36,1,0) icon.Position = UDim2.new(0,10,0,0) icon.BackgroundTransparency = 1 icon.Font = Enum.Font.GothamBold icon.TextSize = 20 icon.TextColor3 = COLORS.accent icon.Text = "⚠" icon.TextXAlignment = Enum.TextXAlignment.Center icon.ZIndex = header.ZIndex + 1 icon.Parent = header
+    local title = Instance.new("TextLabel") title.Size = UDim2.new(1,-56,1,0) title.Position = UDim2.new(0,56,0,0) title.BackgroundTransparency = 1 title.Font = Enum.Font.GothamBold title.TextSize = 16 title.TextColor3 = COLORS.text title.Text = "Unsupported Game" title.TextXAlignment = Enum.TextXAlignment.Left title.ZIndex = header.ZIndex + 1 title.Parent = header
+
+    local msg = Instance.new("TextLabel") msg.Size = UDim2.new(1,-24,0,72) msg.Position = UDim2.new(0,12,0,48) msg.BackgroundTransparency = 1 msg.Font = Enum.Font.Gotham msg.TextSize = 16 msg.TextColor3 = COLORS.textDim msg.Text = "This is not the Rake Remastered game. Are you sure you wanna run this?" msg.TextWrapped = true msg.TextXAlignment = Enum.TextXAlignment.Center msg.ZIndex = pop.ZIndex + 1 msg.Parent = pop
+
+    local btnNo = Instance.new("TextButton") btnNo.Size = UDim2.new(0.44,-8,0,40) btnNo.Position = UDim2.new(0,12,1,-52) btnNo.BackgroundColor3 = COLORS.bg btnNo.Font = Enum.Font.GothamBold btnNo.TextSize = 16 btnNo.TextColor3 = COLORS.text btnNo.Text = "No.." btnNo.ZIndex = pop.ZIndex + 1 btnNo.Parent = pop local noCorner = Instance.new("UICorner") noCorner.CornerRadius = UDim.new(0,8) noCorner.Parent = btnNo local noStroke = Instance.new("UIStroke") noStroke.Color = COLORS.divider noStroke.Thickness = 1 noStroke.Parent = btnNo
+    local btnYes = Instance.new("TextButton") btnYes.Size = UDim2.new(0.44,-8,0,40) btnYes.Position = UDim2.new(1,-12,1,-52) btnYes.AnchorPoint = Vector2.new(1,0) btnYes.BackgroundColor3 = COLORS.accent btnYes.Font = Enum.Font.GothamBold btnYes.TextSize = 16 btnYes.TextColor3 = COLORS.white btnYes.Text = "Yes!" btnYes.ZIndex = pop.ZIndex + 1 btnYes.Parent = pop local yesCorner = Instance.new("UICorner") yesCorner.CornerRadius = UDim.new(0,8) yesCorner.Parent = btnYes
+
+    local choice
+    btnNo.MouseButton1Click:Connect(function() choice = false end)
+    btnYes.MouseButton1Click:Connect(function() choice = true end)
+
+    while choice == nil do wait() end
+    if choice == false then
+        if sg and sg.Parent then sg:Destroy() end
+        return
+    else
+        if sg and sg.Parent then sg:Destroy() end
+    end
+end
+
+-- ** Unsupported game check ends here **
+-----------------------------------------------------------------------------
+
 local player = Players.LocalPlayer
 local FIRST_TAB = nil -- ** select first tab
 local gui = Instance.new("ScreenGui")
 gui.Name = "SCREEN_GUI"
 gui.ResetOnSpawn = false
+
+
 local ok = pcall(function() gui.Parent = game:GetService("CoreGui") end)
 if not ok then
     if player then
@@ -1483,6 +1555,7 @@ local autoScaleESPNameToggle = makeToggle(settingsTab.RightCol, "Auto-Scale ESP 
 local autoHideWhenRakeCloseToggle = makeToggle(settingsTab.RightCol, "Auto-hide when Rake is close")
 local enableNotificationsToggle = makeToggle(settingsTab.LeftCol, "Enable Notifications")
 local animateGUIOnOpenCloseToggle = makeToggle(settingsTab.LeftCol, "Animate GUI on open")
+local warnIfUnsupportedGameToggle = makeToggle(settingsTab.RightCol, "Warn if unsupported game")
 
 -- ** Save Settings to config
 BindToggleToConfig(showGUIOnLoadToggle, "settings.showGUIOnLoad", true)
@@ -1490,6 +1563,7 @@ BindToggleToConfig(autoScaleESPNameToggle, "settings.autoScaleESPName", false)
 BindToggleToConfig(autoHideWhenRakeCloseToggle, "settings.autoHideWhenRakeClose", false)
 BindToggleToConfig(enableNotificationsToggle, "settings.enableNotifications", true)
 BindToggleToConfig(animateGUIOnOpenCloseToggle, "settings.animateGUIOnOpenClose", false)
+BindToggleToConfig(warnIfUnsupportedGameToggle, "settings.warnIfUnsupportedGame", true)
 
 
 -------------------- Break for Close/Open --------------------
