@@ -321,6 +321,7 @@ local function makeNotification(text, duration, parent)
         local Players = game:GetService("Players")
         local CoreGui = game:GetService("CoreGui")
         local lp = Players and Players.LocalPlayer
+        -- if caller provided a parent and it's NOT the main `gui` (SCREEN_GUI), use it
         if parent and parent ~= gui then
             parentGui = parent
         else
@@ -1256,6 +1257,7 @@ local locationItems = { "Safe House", "Base Camp", "Observation Tower", "Power S
 
 local fullBrightToggle = makeToggle(visualTab.LeftCol, "Full Bright") -- 6vst
 local rakeHealthToggle = makeToggle(visualTab.RightCol, "Rake Health") -- 7vst
+local showHealthKeybind = makeKeyBindButton(visualTab.RightCol, "Show Health Keybind", Enum.KeyCode.H)
 local removeFogToggle = makeToggle(visualTab.LeftCol, "Remove Fog") -- 8vst
 
 -- ** Save Visuals to config
@@ -2792,13 +2794,65 @@ do
         api.OnToggle = function(s)
             if prev then pcall(prev, s) end
             if s then pcall(start) else pcall(stop) end
+            if NOTIFICATIONS_ENABLED then
+                if s then pcall(makeNotification, "Rake health display is ON", 3)
+                else pcall(makeNotification, "Rake health display is OFF", 3)
+                end
+            end
         end
         pcall(function() api.Set(api.Get()) end)
+        --** Keybind to toggle
+        local kbApi = KeybindAPI[showHealthKeybind]
+        if kbApi then
+            local boundKey = nil
+            local kbConn = nil
+            local function attachInput()
+                if kbConn and kbConn.Disconnect then kbConn:Disconnect() end
+                kbConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                    if gameProcessed then return end
+                    if not boundKey then return end
+                    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == boundKey then
+                        local tApi = ToggleAPI[rakeHealthToggle]
+                        if tApi and type(tApi.Get) == "function" and type(tApi.Set) == "function" then
+                            pcall(function() tApi.Set(not tApi.Get()) end)
+                        end
+                    end
+                end)
+            end
+
+            -- ** load stored keybind
+            local stored = GetConfig("visuals.rakeHealthKey", nil)
+            if type(stored) == "string" and Enum.KeyCode[stored] then
+                pcall(function() if kbApi.Set then kbApi.Set(Enum.KeyCode[stored]) end end)
+                boundKey = Enum.KeyCode[stored]
+            else
+                -- ** default to H
+                pcall(function() if kbApi.Set then kbApi.Set(Enum.KeyCode.H) end end)
+                boundKey = Enum.KeyCode.H
+            end
+            attachInput()
+
+            local prevBind = kbApi.OnBind
+            kbApi.OnBind = function(k)
+                if prevBind then pcall(prevBind, k) end
+                if typeof(k) == "EnumItem" then
+                    boundKey = k
+                    pcall(function() SetConfig("visuals.rakeHealthKey", k.Name) end)
+                    attachInput()
+                end
+            end
+
+            -------------------- Break for Unload (Keybind Unload) --------------------
+            if _G and _G.TemptUI and type(_G.TemptUI.RegisterUnload) == "function" then
+                _G.TemptUI.RegisterUnload(function()
+                    if kbConn and kbConn.Disconnect then kbConn:Disconnect() end
+                end)
+            end
+        end
     end
 
-    --------------------- Break for Unload ----------------------
+    --------------------- Break for Unload (Toggle Unload) ----------------------
 
-    -- ** unload handler
     if _G and _G.TemptUI and type(_G.TemptUI.RegisterUnload) == "function" then
         _G.TemptUI.RegisterUnload(function()
             pcall(stop)
@@ -3636,6 +3690,15 @@ do
         local part = findDisplayPart(keyInst)
         if not part or not part:IsDescendantOf(Workspace) then return false end
         if not keyInst.Parent then return false end
+        for k,v in pairs(entries) do
+            pcall(function()
+                if v and v.bb and v.bb.Adornee and v.bb.Adornee == part then
+                    if v.bb.Parent then v.bb:Destroy() end
+                    if v.hl and v.hl.Parent then v.hl:Destroy() end
+                    entries[k] = nil
+                end
+            end)
+        end
         local ok, bb = pcall(function()
             local g = Instance.new("BillboardGui")
             g.Name = "Tempt_ScrapBB"
@@ -3862,12 +3925,14 @@ do
 
 
     local FlareFinder = {}
-    local flareEntry = nil
-    local flareAddedConn, flareRemConn, workspaceChildConn
+    local flareChildConns = {}
+    local flareRemConns = {}
+    local workspaceChildConn
+    local flareNotified = {}
 
     local function createFlareVisual(fgPick, part)
         if not fgPick or not part then return end
-        if flareEntry and flareEntry.part and flareEntry.part.Parent then return end
+        if entries[fgPick] then return end
         local ok, hl = pcall(function()
             local h = Instance.new("Highlight")
             h.Name = "Tempt_FlareHL"
@@ -3913,7 +3978,7 @@ do
                 if lbl then strokeRef = lbl:FindFirstChildOfClass("UIStroke") end
             end)
             entries[fgPick] = { bb = bb, hl = (ok and hl) and hl or nil, stroke = strokeRef }
-            pcall(function()
+                pcall(function()
                 local cam = Workspace.CurrentCamera
                 local lbl = bb:FindFirstChild("Label")
                 if cam and lbl and bb and bb.Adornee and bb.Adornee:IsA("BasePart") then
@@ -3928,60 +3993,73 @@ do
                 end
             end)
         end
-
-        flareEntry = { part = part, hl = (ok and hl) and hl or nil, bb = (ok2 and bb) and bb or nil }
     end
 
     function FlareFinder.start()
-        if flareAddedConn or workspaceChildConn then return end
+        if workspaceChildConn then return end
 
-        local fgPick = Workspace:FindFirstChild("FlareGunPickUp")
-        if fgPick then
-            local part = fgPick:FindFirstChild("FlareGun")
-            if part and part:IsA("BasePart") then createFlareVisual(fgPick, part) end
-            flareAddedConn = fgPick.DescendantAdded:Connect(function(desc)
+        local function attach(pickup)
+            if not pickup or flareChildConns[pickup] then return end
+            local part = pickup:FindFirstChild("FlareGun")
+            if part and part:IsA("BasePart") then
+                pcall(function() createFlareVisual(pickup, part) end)
+                pcall(function()
+                    if NOTIFICATIONS_ENABLED and not flareNotified[pickup] then
+                        flareNotified[pickup] = true
+                        pcall(function() makeNotification("Flare Gun spawned!", 3) end)
+                    end
+                end)
+            end
+            local addConn = pickup.DescendantAdded:Connect(function(desc)
                 if not desc then return end
-                if desc.Name == "FlareGun" and desc:IsA("BasePart") then createFlareVisual(fgPick, desc) end
+                if desc.Name == "FlareGun" and desc:IsA("BasePart") then
+                    pcall(function() createFlareVisual(pickup, desc) end)
+                    pcall(function()
+                        if NOTIFICATIONS_ENABLED and not flareNotified[pickup] then
+                            flareNotified[pickup] = true
+                            pcall(function() makeNotification("Flare Gun spawned!", 3) end)
+                        end
+                    end)
+                end
             end)
-            flareRemConn = fgPick.DescendantRemoving:Connect(function(desc)
+            local remConn = pickup.DescendantRemoving:Connect(function(desc)
                 if not desc then return end
-                if desc.Name == "FlareGun" then pcall(function() FlareFinder.unload() end) end
+                if desc.Name == "FlareGun" then
+                    pcall(function()
+                        local ent = entries[pickup]
+                        if ent then
+                            if ent.bb and ent.bb.Parent then ent.bb:Destroy() end
+                            if ent.hl and ent.hl.Parent then ent.hl:Destroy() end
+                            entries[pickup] = nil
+                        end
+                    end)
+                end
             end)
+            flareChildConns[pickup] = addConn
+            flareRemConns[pickup] = remConn
+        end
+
+        for _,obj in ipairs(Workspace:GetDescendants()) do
+            if obj and obj.Name == "FlareGunPickUp" then attach(obj) end
         end
 
         workspaceChildConn = Workspace.ChildAdded:Connect(function(child)
             if not child then return end
-            if child.Name == "FlareGunPickUp" then
-                local part = child:FindFirstChild("FlareGun")
-                if part and part:IsA("BasePart") then createFlareVisual(child, part) end
-                if not flareAddedConn then
-                    flareAddedConn = child.DescendantAdded:Connect(function(desc)
-                        if not desc then return end
-                        if desc.Name == "FlareGun" and desc:IsA("BasePart") then createFlareVisual(child, desc) end
-                    end)
-                end
-                if not flareRemConn then
-                    flareRemConn = child.DescendantRemoving:Connect(function(desc)
-                        if not desc then return end
-                        if desc.Name == "FlareGun" then pcall(function() FlareFinder.unload() end) end
-                    end)
-                end
-            end
+            if child.Name == "FlareGunPickUp" then attach(child) end
         end)
     end
 
     function FlareFinder.unload()
-        if flareAddedConn and flareAddedConn.Disconnect then flareAddedConn:Disconnect() end
-        if flareRemConn and flareRemConn.Disconnect then flareRemConn:Disconnect() end
-        if workspaceChildConn and workspaceChildConn.Disconnect then workspaceChildConn:Disconnect() end
-        flareAddedConn, flareRemConn, workspaceChildConn = nil, nil, nil
-        if flareEntry then
-            pcall(function() if flareEntry.bb then flareEntry.bb:Destroy() end end)
-            pcall(function() if flareEntry.hl then flareEntry.hl:Destroy() end end)
-            local fgPick = flareEntry and flareEntry.part and flareEntry.part.Parent
-            if fgPick then entries[fgPick] = nil end
-            flareEntry = nil
+        for k,v in pairs(flareChildConns) do
+            pcall(function() if v and v.Disconnect then v:Disconnect() end end)
+            flareChildConns[k] = nil
         end
+        for k,v in pairs(flareRemConns) do
+            pcall(function() if v and v.Disconnect then v:Disconnect() end end)
+            flareRemConns[k] = nil
+        end
+        if workspaceChildConn and workspaceChildConn.Disconnect then workspaceChildConn:Disconnect() end
+        workspaceChildConn = nil
         for _,obj in ipairs(Workspace:GetDescendants()) do
             if obj and obj.Name == "Tempt_FlareHL" then pcall(function() obj:Destroy() end) end
             if obj and obj.Name == "Tempt_FlareBB" then pcall(function() obj:Destroy() end) end
@@ -4002,6 +4080,7 @@ do
     local SupplyFinder = {}
     local supplyMap = {} 
     local supplyChildConn, supplyRootConn
+    local supplyNotified = {}
 
     local function findCanonicalSupply(obj)
         if not obj or not obj.Parent then return nil end
@@ -4131,8 +4210,18 @@ do
                 local canonical = findCanonicalSupply(child) or child
                 pcall(function()
                     makeVisualForSupply(canonical)
+                end)
+                pcall(function()
                     if NOTIFICATIONS_ENABLED then
-                        pcall(function() makeNotification("Supply Drop spawned!", 3) end)
+                        if not supplyNotified[canonical] then
+                            supplyNotified[canonical] = "spawned"
+                            pcall(function() makeNotification("Supply Drop spawned!", 3) end)
+                        else
+                            if supplyNotified[canonical] == "spawned" and entries[canonical] then
+                                supplyNotified[canonical] = "landed"
+                                pcall(function() makeNotification("Supply crate landed!", 3) end) -- ** Might not work, but im too tired to fix
+                            end
+                        end
                     end
                 end)
             end)
@@ -4147,8 +4236,18 @@ do
                         local canonical = findCanonicalSupply(child) or child
                         pcall(function()
                             makeVisualForSupply(canonical)
+                        end)
+                        pcall(function()
                             if NOTIFICATIONS_ENABLED then
-                                pcall(function() makeNotification("Supply Drop spawned!", 3) end)
+                                if not supplyNotified[canonical] then
+                                    supplyNotified[canonical] = "spawned"
+                                    pcall(function() makeNotification("Supply Drop spawned!", 3) end)
+                                else
+                                    if supplyNotified[canonical] == "spawned" and entries[canonical] then
+                                        supplyNotified[canonical] = "landed"
+                                        pcall(function() makeNotification("Supply crate landed!", 3) end)
+                                    end
+                                end
                             end
                         end)
                     end)
@@ -4187,7 +4286,40 @@ do
 
     local TrapsFinder = {}
     local trapMap = {}
-    local trapChildConn, trapRootConn
+    local trapChildConns = {}
+    local trapRootConn
+    local trapScanConn
+    local trapPending = {}
+    local trapGenericConn = nil
+    local trapGenericRemConn = nil
+    local trapHeartbeatConn = nil
+    local trapCandidates = {}       
+    local trapCandidateList = {}    
+    local trapCandidateIndex = 0
+    local trapHeartbeatAccum = 0
+    local TRAP_SCAN_INTERVAL = 5    
+    local TRAP_BATCH_PER_TICK = 12   
+
+    local function clearPendingTrap(m)
+        local p = trapPending[m]
+        if not p then return end
+        for _,c in ipairs(p) do pcall(function() if c and c.Disconnect then c:Disconnect() end end) end
+        trapPending[m] = nil
+    end
+
+    local function scheduleTrapAttempts(m)
+        if not m or not m.Parent then return end
+        if trapPending[m] then return end
+        trapPending[m] = {}
+        if m.DescendantAdded then table.insert(trapPending[m], m.DescendantAdded:Connect(function() pcall(function() if m and m.Parent then pcall(function() makeTrapVisual(m) end) end end) end)) end
+        if m.GetPropertyChangedSignal then table.insert(trapPending[m], m:GetPropertyChangedSignal("PrimaryPart"):Connect(function() pcall(function() if m and m.Parent then pcall(function() makeTrapVisual(m) end) end end) end)) end
+        spawn(function()
+            wait(0.2); pcall(function() if m and m.Parent then pcall(function() makeTrapVisual(m) end) end end)
+            wait(1); pcall(function() if m and m.Parent then pcall(function() makeTrapVisual(m) end) end end)
+            wait(2); pcall(function() if m and m.Parent then pcall(function() makeTrapVisual(m) end) end end)
+            clearPendingTrap(m)
+        end)
+    end
 
     local function findHitBox(model)
         if not model then return nil end
@@ -4202,20 +4334,37 @@ do
 
     local function detectTrapType(model)
         if not model then return "Unknown" end
-        local part = model:FindFirstChild("Close") or model:FindFirstChild("Open")
-        if part and part:IsA("BasePart") then
-            local mat = part.Material
-            if mat == Enum.Material.CorrodedMetal then return "Rusty" end
-            if mat == Enum.Material.Plastic then return "Player" end
+        local candidates = {}
+        local function addIfPart(p)
+            if p and p:IsA("BasePart") then table.insert(candidates, p) end
         end
-        -- ** try descendants
+
         for _,d in ipairs(model:GetDescendants()) do
-            if d and d:IsA("BasePart") and (d.Name == "Close" or d.Name == "Open") then
-                local mat = d.Material
-                if mat == Enum.Material.CorrodedMetal then return "Rusty" end
-                if mat == Enum.Material.Plastic then return "Player" end
+            if d and d:IsA("BasePart") then
+                local n = (d.Name or ""):lower()
+                if n == "close" or n == "open" or n:find("close") or n:find("open") then
+                    addIfPart(d)
+                end
             end
         end
+
+        addIfPart(model:FindFirstChild("Close"))
+        addIfPart(model:FindFirstChild("Open"))
+        if #candidates == 0 and model.PrimaryPart and model.PrimaryPart:IsA("BasePart") then addIfPart(model.PrimaryPart) end
+        if #candidates == 0 then
+            for _,d in ipairs(model:GetDescendants()) do if d and d:IsA("BasePart") then addIfPart(d) end end
+        end
+
+        local seenRusty, seenPlayer = false, false
+        for _,p in ipairs(candidates) do
+            local mat = p.Material
+            if mat == Enum.Material.CorrodedMetal then seenRusty = true end
+            if mat == Enum.Material.Plastic then seenPlayer = true end
+        end
+
+        if seenRusty and not seenPlayer then return "Rusty" end
+        if seenPlayer and not seenRusty then return "Player" end
+        if seenRusty and seenPlayer then return "Rusty" end
         return "Unknown"
     end
 
@@ -4278,7 +4427,7 @@ do
             stroke.Parent = t
         end)
 
-        trapMap[model] = { bb = bb, hl = (ok and hl) and hl or nil }
+        trapMap[model] = { bb = bb, hl = (ok and hl) and hl or nil, adorneeConn = nil }
         entries[model] = { bb = bb, hl = (ok and hl) and hl or nil, stroke = (bb and bb:FindFirstChild("Label") and bb.Label:FindFirstChildOfClass("UIStroke")) }
 
         local conn
@@ -4297,6 +4446,25 @@ do
             end
         end)
         trapMap[model].conn = conn
+
+        if bb and bb.Adornee and bb.Adornee.IsA and bb.Adornee:IsA("BasePart") then
+            local aconn = bb.Adornee.AncestryChanged:Connect(function(_, parent)
+                if not parent then
+                    pcall(function()
+                        local info = trapMap[model]
+                        if info then
+                            if info.bb and info.bb.Parent then info.bb:Destroy() end
+                            if info.hl and info.hl.Parent then info.hl:Destroy() end
+                            entries[model] = nil
+                            trapMap[model] = nil
+                        end
+                    end)
+                    if aconn and aconn.Disconnect then aconn:Disconnect() end
+                    if conn and conn.Disconnect then conn:Disconnect() end
+                end
+            end)
+            trapMap[model].adorneeConn = aconn
+        end
     end
 
     function TrapsFinder.start()
@@ -4305,46 +4473,215 @@ do
         local trapsRoot = debris and debris:FindFirstChild("Traps")
         if trapsRoot then
             spawn(function()
-                local kids = trapsRoot:GetChildren()
+                local kids = trapsRoot:GetDescendants()
                 local BATCH = 40
                 for i = 1, #kids, BATCH do
                     for j = i, math.min(i+BATCH-1, #kids) do
                         local c = kids[j]
-                        if c and c:IsA("Model") then pcall(function() makeTrapVisual(c) end) end
+                        if not c then break end
+                        local target = c
+                        if target and target:IsA("BasePart") then
+                            local cur = target
+                            for _=1,8 do
+                                if not cur then break end
+                                if cur:IsA("Model") then break end
+                                cur = cur.Parent
+                            end
+                            if cur and cur:IsA("Model") then target = cur end
+                        end
+                        if target and target:IsA("Model") then pcall(function() makeTrapVisual(target) end) end
                     end
                     RunService.Heartbeat:Wait()
                 end
             end)
-            trapChildConn = trapsRoot.ChildAdded:Connect(function(child)
+            local conn = trapsRoot.DescendantAdded:Connect(function(child)
                 if not child then return end
-                if child:IsA("Model") then pcall(function() makeTrapVisual(child) end) end
+                local target = child
+                if target and target:IsA("BasePart") then
+                    local cur = target
+                    for _=1,8 do
+                        if not cur then break end
+                        if cur:IsA("Model") then break end
+                        cur = cur.Parent
+                    end
+                    if cur and cur:IsA("Model") then target = cur end
+                end
+                if target and target:IsA("Model") then
+                    pcall(function() makeTrapVisual(target) end)
+                    if not entries[target] then scheduleTrapAttempts(target) end
+                end
             end)
+            trapChildConns[trapsRoot] = conn
         end
-        trapRootConn = Workspace.ChildAdded:Connect(function(c)
+        trapRootConn = Workspace.DescendantAdded:Connect(function(c)
             if not c then return end
-            if c.Name == "Debris" then
-                local tr = c:FindFirstChild("Traps")
-                if tr and not trapChildConn then
-                    trapChildConn = tr.ChildAdded:Connect(function(child)
+            if (c.Name == "Traps") and (c:IsA("Model") or c:IsA("Folder")) then
+                if not trapChildConns[c] then
+                    local tr = c
+                    local conn = tr.DescendantAdded:Connect(function(child)
                         if not child then return end
-                        if child:IsA("Model") then pcall(function() makeTrapVisual(child) end) end
+                        local target = child
+                        if target and target:IsA("BasePart") then
+                            local cur = target
+                            for _=1,8 do
+                                if not cur then break end
+                                if cur:IsA("Model") then break end
+                                cur = cur.Parent
+                            end
+                            if cur and cur:IsA("Model") then target = cur end
+                        end
+                        if target and target:IsA("Model") then
+                            pcall(function() makeTrapVisual(target) end)
+                            if not entries[target] then scheduleTrapAttempworkspace.Debris.Trapsts(target) end
+                        end
                     end)
+                    trapChildConns[tr] = conn
                 end
             end
         end)
+        if not trapGenericConn then
+            trapGenericConn = Workspace.DescendantAdded:Connect(function(desc)
+                if not desc then return end
+                local function addCandidate(mdl)
+                    if not mdl or not mdl:IsA("Model") then return end
+                    if trapCandidates[mdl] then return end
+                    local debrisRoot = Workspace:FindFirstChild("Debris")
+                    if not debrisRoot then return end
+                    local trapsRootLocal = debrisRoot:FindFirstChild("Traps")
+                    if not trapsRootLocal then return end
+                    if not mdl:IsDescendantOf(trapsRootLocal) then return end
+                    trapCandidates[mdl] = true
+                    table.insert(trapCandidateList, mdl)
+                end
+
+                if desc:IsA("Model") then
+                    local nm = (desc.Name or ""):lower()
+                    if nm:find("trap") then
+                        addCandidate(desc)
+                        if not entries[desc] and not trapMap[desc] then
+                            pcall(function() makeTrapVisual(desc) end)
+                            if not entries[desc] then scheduleTrapAttempts(desc) end
+                        end
+                    end
+                elseif desc:IsA("BasePart") then
+                    local n = (desc.Name or ""):lower()
+                    if n:find("hit") or n:find("hitbox") then
+                        local cur = desc.Parent
+                        for i=1,8 do if not cur then break end; if cur:IsA("Model") then break end; cur = cur.Parent end
+                        local mdl = (cur and cur:IsA("Model") and cur) or desc.Parent
+                        if mdl and mdl:IsA("Model") then
+                            addCandidate(mdl)
+                            if not entries[mdl] and not trapMap[mdl] then
+                                pcall(function() makeTrapVisual(mdl) end)
+                                if not entries[mdl] then scheduleTrapAttempts(mdl) end
+                            end
+                        end
+                    end
+                end
+            end)
+            trapGenericRemConn = Workspace.DescendantRemoving:Connect(function(desc)
+                if not desc then return end
+                if desc:IsA("Model") then
+                    trapCandidates[desc] = nil
+                else
+                    local cur = desc.Parent
+                    for i=1,8 do if not cur then break end; if cur:IsA("Model") then break end; cur = cur.Parent end
+                    local mdl = (cur and cur:IsA("Model") and cur) or desc.Parent
+                    if mdl and mdl:IsA("Model") then trapCandidates[mdl] = nil end
+                end
+            end)
+        end
+
+        if not trapHeartbeatConn then
+            trapHeartbeatConn = RunService.Heartbeat:Connect(function(dt)
+                pcall(function()
+                    trapHeartbeatAccum = trapHeartbeatAccum + (dt or 0)
+                    if trapHeartbeatAccum >= TRAP_SCAN_INTERVAL then
+                        trapHeartbeatAccum = 0
+                        trapCandidateList = {}
+                        for mdl,_ in pairs(trapCandidates) do
+                            if mdl and mdl.Parent and mdl:IsA("Model") and not entries[mdl] and not trapMap[mdl] then
+                                table.insert(trapCandidateList, mdl)
+                            else
+                                trapCandidates[mdl] = nil
+                            end
+                        end
+                        trapCandidateIndex = 0
+                    end
+
+                    if #trapCandidateList > 0 then
+                        local processed = 0
+                        local batch = TRAP_BATCH_PER_TICK
+                        local len = #trapCandidateList
+                        while processed < batch and len > 0 do
+                            trapCandidateIndex = trapCandidateIndex + 1
+                            if trapCandidateIndex > len then trapCandidateIndex = 1 end
+                            local mdl = trapCandidateList[trapCandidateIndex]
+                            if mdl then
+                                if mdl.Parent and not entries[mdl] and not trapMap[mdl] then
+                                    pcall(function() makeTrapVisual(mdl) end)
+                                else
+                                    trapCandidates[mdl] = nil
+                                end
+                            end
+                            processed = processed + 1
+                            if processed >= len then break end
+                        end
+                    end
+
+                    for m, info in pairs(trapMap) do
+                        local remove = false
+                        if not m or not m.Parent then remove = true end
+                        local bb = (info and info.bb) or nil
+                        local hl = (info and info.hl) or nil
+                        if not remove and bb then
+                            local ador = nil
+                            pcall(function() ador = bb.Adornee end)
+                            if not ador or not ador:IsDescendantOf(Workspace) then remove = true end
+                        end
+                        if remove then
+                            pcall(function()
+                                if info.bb and info.bb.Parent then info.bb:Destroy() end
+                                if info.hl and info.hl.Parent then info.hl:Destroy() end
+                            end)
+                            entries[m] = nil
+                            trapMap[m] = nil
+                            trapCandidates[m] = nil
+                        end
+                    end
+                end)
+            end)
+        end
     end
 
     function TrapsFinder.unload()
-        if trapChildConn and trapChildConn.Disconnect then trapChildConn:Disconnect() end
+        for k,v in pairs(trapChildConns) do
+            pcall(function() if v and v.Disconnect then v:Disconnect() end end)
+            trapChildConns[k] = nil
+        end
         if trapRootConn and trapRootConn.Disconnect then trapRootConn:Disconnect() end
-        trapChildConn, trapRootConn = nil, nil
+        trapRootConn = nil
         for model,info in pairs(trapMap) do
             pcall(function() if info.bb and info.bb.Parent then info.bb:Destroy() end end)
             pcall(function() if info.hl and info.hl.Parent then info.hl:Destroy() end end)
             if info.conn and info.conn.Disconnect then info.conn:Disconnect() end
+            if info.adorneeConn and info.adorneeConn.Disconnect then info.adorneeConn:Disconnect() end
             entries[model] = nil
             trapMap[model] = nil
         end
+        if trapScanConn and trapScanConn.Disconnect then trapScanConn:Disconnect() end
+        trapScanConn = nil
+        if trapHeartbeatConn and trapHeartbeatConn.Disconnect then trapHeartbeatConn:Disconnect() end
+        trapHeartbeatConn = nil
+        if trapGenericConn and trapGenericConn.Disconnect then trapGenericConn:Disconnect() end
+        trapGenericConn = nil
+        if trapGenericRemConn and trapGenericRemConn.Disconnect then trapGenericRemConn:Disconnect() end
+        trapGenericRemConn = nil
+        -- clear candidate lists
+        for k,_ in pairs(trapCandidates) do trapCandidates[k] = nil end
+        trapCandidateList = {}
+        trapCandidateIndex = 0
+        trapHeartbeatAccum = 0
         for _,obj in ipairs(Workspace:GetDescendants()) do
             if obj and obj.Name == "Tempt_TrapsHL" then pcall(function() obj:Destroy() end) end
             if obj and obj.Name == "Tempt_TrapsBB" then pcall(function() obj:Destroy() end) end
