@@ -13,7 +13,6 @@ local Lighting = game:GetService("Lighting")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
 local RepStorage = game:GetService("ReplicatedStorage") -- Dupe, but still needed
 
 ---------------------------------------------------------------------------
