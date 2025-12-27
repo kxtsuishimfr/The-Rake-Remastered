@@ -1,5 +1,5 @@
 -- ─────────────── ✦ REMASTERED VERSION OF TRK Exploit ✦ ───────────────
---  Created by: primesto.fx
+--  Created by: primesto.fx // ColdSnow
 --  Maintained by: primesto.fx & therealowner69
 --  DM on Discord for requests: primesto.fx // therealowner69
 -- ────────────────────────────────────────────────────────────────
@@ -1182,6 +1182,63 @@ local function makeDropDownList(parent, labelText, items, defaultIndex)
     return frame
 end
 
+-- ** makeLabel
+
+local function makeLabel(parentCol, text, opts)
+    opts = opts or {}
+    local font = opts.font or Enum.Font.GothamBold
+    local textSize = opts.textSize or 14
+    local textColor = opts.textColor or COLORS.text
+    local padding = opts.padding or Vector2.new(6,6)
+
+    -- container frame (panel for depth)
+    local container = Instance.new("Frame")
+    container.Name = "LabelContainer"
+    container.BackgroundColor3 = Color3.fromRGB(35,35,35)
+    container.BorderSizePixel = 0
+    container.ClipsDescendants = true
+    container.Size = UDim2.new(1,0,0,0)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0,6)
+    corner.Parent = container
+    container.Parent = parentCol
+
+    -- label inside container
+    local lbl = Instance.new("TextLabel")
+    lbl.Name = "Label"
+    lbl.BackgroundTransparency = 1
+    lbl.Font = font
+    lbl.TextSize = textSize
+    lbl.TextColor3 = textColor
+    lbl.TextWrapped = true
+    lbl.RichText = opts.richText or false
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.TextYAlignment = Enum.TextYAlignment.Top
+    lbl.Text = tostring(text or "")
+    lbl.Size = UDim2.new(1, -padding.X*2, 0, 0)
+    lbl.Position = UDim2.new(0, padding.X, 0, padding.Y)
+    lbl.Parent = container
+
+    -- force automatic sizing
+    lbl.AutomaticSize = Enum.AutomaticSize.Y
+    container.Size = UDim2.new(1,0,0,0)
+    container.AutomaticSize = Enum.AutomaticSize.Y
+
+    -- LayoutOrder for UIListLayout
+    local nextOrder = 1
+    for _,c in ipairs(parentCol:GetChildren()) do
+        if c:IsA("GuiObject") and c.LayoutOrder then
+            nextOrder = math.max(nextOrder, c.LayoutOrder + 1)
+        end
+    end
+    container.LayoutOrder = nextOrder
+
+    return lbl
+end
+
+
+
+
 --------------------------------------------------------------------------
 
 -- ** Config Stuff
@@ -1488,6 +1545,11 @@ end
 
 -- ** All Tabs **
 
+-- Home Tab
+local homeTab = makeTab("Home", tabsBar, pages, selectTab, { Left = ""})
+homeTab.page.Parent = pages
+
+
 -- Visuals Tab
 local visualTab = makeTab("Visuals", tabsBar, pages, selectTab, { Left = "General", Right = "Rake Related" })
 visualTab.page.Parent = pages
@@ -1678,6 +1740,27 @@ BindToggleToConfig(showPowerLevelToggle, "game.showPowerLevel", false)
 BindToggleToConfig(showObjectFinderToggle, "game.showObjectFinder", false)
 BindToggleToConfig(bypassSafeHouseDoorToggle, "game.bypassSafeHouseDoor", false)
 BindToggleToConfig(gameTimerToggle, "game.gameTimer", false)
+
+-- ** Home Tab Parts ** --
+
+local welcomeLabel = makeLabel(homeTab.LeftCol, 
+[[
+Hii! Welcome to my script :> First of all, I hope you'll have fun using this, and it will work  
+If some things don't work — which I hope they will, because I spent a lottt of work on this script :> 
+join my Discord server to hang out or get support!!  
+https://discord.gg/AuQgkpWkdP
+]], {
+    textColor = Color3.fromRGB(255, 182, 193),
+    textSize = 16,
+    height = 80,
+    wrap = true,
+    textX = Enum.TextXAlignment.Left,
+    textY = Enum.TextYAlignment.Top
+})
+
+
+local joinServerButton = makeButton (homeTab.LeftCol, "Copy Invite Link")
+
 
 
 --------------------------------------------------------------------------
@@ -5602,6 +5685,26 @@ end
 
 
 -- ** Animate GUI Logic Ends Here ** --
+
+
+-- ** Copy Invite Link Logic Starts here ** --
+
+ButtonAPI[joinServerButton].OnClick = function()
+    local inviteLink = "https://discord.gg/AuQgkpWkdP"
+    
+    -- copy to clipboard
+    if setclipboard then
+        pcall(setclipboard, inviteLink)
+    else
+        warn("Clipboard copy not supported in this environment.")
+    end
+
+    if NOTIFICATIONS_ENABLED ~= false then
+        makeNotification("Invite link copied!", 3)
+    end
+end
+
+-- ** Copy Invite Link Logic Ends here -- **
 
 
 -- ────────────────────────────────────────────────────────────────────
