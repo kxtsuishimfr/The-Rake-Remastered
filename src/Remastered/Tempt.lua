@@ -1314,6 +1314,50 @@ root.BackgroundColor3 = COLORS.bg
 root.Parent = gui
 local rootCorner = Instance.new("UICorner") rootCorner.Parent = root
 
+-- UI Scaling
+local _scalableGuis = {}
+local _lastViewport = Vector2.new(0,0)
+local _refW, _refH = 1366, 768
+
+local uiScaleRoot = Instance.new("UIScale")
+uiScaleRoot.Name = "Tempt_UIScaleRoot"
+uiScaleRoot.Parent = gui
+uiScaleRoot.Scale = 1
+
+local function computeScale()
+    local vs = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(_refW, _refH)
+    local scale = math.min(1, math.min(vs.X / _refW, vs.Y / _refH))
+    return scale, vs
+end
+
+local function applyScaleToGui(sg, s)
+    if not sg or not sg.Parent then return end
+    local us = sg:FindFirstChild("Tempt_UIScale")
+    if not us then
+        us = Instance.new("UIScale")
+        us.Name = "Tempt_UIScale"
+        us.Parent = sg
+    end
+    us.Scale = s
+end
+
+local function RegisterScalableGui(screenGui)
+    if not screenGui then return end
+    _scalableGuis[screenGui] = true
+    applyScaleToGui(screenGui, uiScaleRoot.Scale)
+end
+
+RunService.RenderStepped:Connect(function()
+    local scale, vs = computeScale()
+    if vs.X == _lastViewport.X and vs.Y == _lastViewport.Y then return end
+    _lastViewport = vs
+    uiScaleRoot.Scale = scale
+    for sg,_ in pairs(_scalableGuis) do
+        applyScaleToGui(sg, scale)
+    end
+end)
+
+
 local tabsBar = Instance.new("Frame")
 tabsBar.Size = UDim2.new(1,0,0,40)
 tabsBar.Position = UDim2.new(0,0,0,0)
@@ -2408,6 +2452,7 @@ end
         screenGui.Name = "RakeMeterGUI"
         screenGui.IgnoreGuiInset = true
         screenGui.ResetOnSpawn = false
+        RegisterScalableGui(screenGui)
 
         local root = Instance.new("Frame")
         root.Name = "RakeMeterPanel"
@@ -3795,6 +3840,7 @@ end
          screenGui.Name = "PowerLevelGUI"
          screenGui.IgnoreGuiInset = true
          screenGui.ResetOnSpawn = false
+        RegisterScalableGui(screenGui)
  
          panel = Instance.new("Frame")
          panel.Name = "PowerPanel"
@@ -5471,6 +5517,7 @@ do
         screen.Name = "Tempt_GameTimer"
         screen.ResetOnSpawn = false
         screen.Parent = playerGui or game:GetService("CoreGui")
+        RegisterScalableGui(screen)
         pcall(function() screen.DisplayOrder = 900 end)
 
         local root = Instance.new("Frame")
