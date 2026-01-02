@@ -1308,8 +1308,8 @@ end
 -- ** Build UI
 local root = Instance.new("Frame")
 root.Size = UDim2.new(0, 760, 0, 520)
-root.Position = UDim2.new(0.5, -380, 0.5, -260)
-root.AnchorPoint = Vector2.new(0.5,0.5)
+root.AnchorPoint = Vector2.new(0.5, 0.5)
+root.Position = UDim2.new(0.5, 0, 0.5, 0)
 root.BackgroundColor3 = COLORS.bg
 root.Parent = gui
 local rootCorner = Instance.new("UICorner") rootCorner.Parent = root
@@ -2412,8 +2412,9 @@ end
         local root = Instance.new("Frame")
         root.Name = "RakeMeterPanel"
         root.Size = UDim2.new(0, 200, 0, 88)
-        root.Position = UDim2.new(1, -12, 0, 12)
-        root.AnchorPoint = Vector2.new(1, 0)
+        -- center vertically on right side (offsets chosen to stack with other panels)
+        root.AnchorPoint = Vector2.new(1, 0.5)
+        root.Position = UDim2.new(1, -12, 0.5, -92)
         root.BackgroundColor3 = COLORS.panel
         root.BorderSizePixel = 0
         root.Parent = screenGui
@@ -3798,8 +3799,9 @@ end
          panel = Instance.new("Frame")
          panel.Name = "PowerPanel"
          panel.Size = UDim2.new(0, 220, 0, 84)
-         panel.Position = UDim2.new(1, -12, 0, 120)
-         panel.AnchorPoint = Vector2.new(1, 0)
+         -- stack under rake meter, centered vertically on right side
+         panel.AnchorPoint = Vector2.new(1, 0.5)
+         panel.Position = UDim2.new(1, -12, 0.5, 2)
          panel.BackgroundColor3 = COLORS.panel
          panel.BorderSizePixel = 0
          panel.Parent = screenGui
@@ -5473,8 +5475,9 @@ do
 
         local root = Instance.new("Frame")
         root.Size = UDim2.new(0, 220, 0, 84)
-        root.Position = UDim2.new(1, -240, 0, 140) -- ** Below rake meter?
-        root.AnchorPoint = Vector2.new(0,0)
+        -- stack under the other two panels; anchor to right middle and offset down
+        root.AnchorPoint = Vector2.new(1, 0.5)
+        root.Position = UDim2.new(1, -12, 0.5, 94)
         root.BackgroundColor3 = COLORS.panel
         root.Parent = screen
         local corner = Instance.new("UICorner") corner.CornerRadius = UDim.new(0,6) corner.Parent = root
