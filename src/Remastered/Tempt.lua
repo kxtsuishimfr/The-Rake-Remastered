@@ -1182,59 +1182,7 @@ local function makeDropDownList(parent, labelText, items, defaultIndex)
     return frame
 end
 
--- ** makeLabel
-
-local function makeLabel(parentCol, text, opts)
-    opts = opts or {}
-    local font = opts.font or Enum.Font.GothamBold
-    local textSize = opts.textSize or 14
-    local textColor = opts.textColor or COLORS.text
-    local padding = opts.padding or Vector2.new(6,6)
-
-    -- container frame (panel for depth)
-    local container = Instance.new("Frame")
-    container.Name = "LabelContainer"
-    container.BackgroundColor3 = Color3.fromRGB(35,35,35)
-    container.BorderSizePixel = 0
-    container.ClipsDescendants = true
-    container.Size = UDim2.new(1,0,0,0)
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0,6)
-    corner.Parent = container
-    container.Parent = parentCol
-
-    -- label inside container
-    local lbl = Instance.new("TextLabel")
-    lbl.Name = "Label"
-    lbl.BackgroundTransparency = 1
-    lbl.Font = font
-    lbl.TextSize = textSize
-    lbl.TextColor3 = textColor
-    lbl.TextWrapped = true
-    lbl.RichText = opts.richText or false
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.TextYAlignment = Enum.TextYAlignment.Top
-    lbl.Text = tostring(text or "")
-    lbl.Size = UDim2.new(1, -padding.X*2, 0, 0)
-    lbl.Position = UDim2.new(0, padding.X, 0, padding.Y)
-    lbl.Parent = container
-
-    -- force automatic sizing
-    lbl.AutomaticSize = Enum.AutomaticSize.Y
-    container.Size = UDim2.new(1,0,0,0)
-    container.AutomaticSize = Enum.AutomaticSize.Y
-
-    -- LayoutOrder for UIListLayout
-    local nextOrder = 1
-    for _,c in ipairs(parentCol:GetChildren()) do
-        if c:IsA("GuiObject") and c.LayoutOrder then
-            nextOrder = math.max(nextOrder, c.LayoutOrder + 1)
-        end
-    end
-    container.LayoutOrder = nextOrder
-
-    return lbl
-end
+-- makeLabel
 
 
 
@@ -1308,55 +1256,11 @@ end
 -- ** Build UI
 local root = Instance.new("Frame")
 root.Size = UDim2.new(0, 760, 0, 520)
-root.AnchorPoint = Vector2.new(0.5, 0.5)
-root.Position = UDim2.new(0.5, 0, 0.5, 0)
+root.Position = UDim2.new(0.5, -380, 0.5, -260)
+root.AnchorPoint = Vector2.new(0.5,0.5)
 root.BackgroundColor3 = COLORS.bg
 root.Parent = gui
 local rootCorner = Instance.new("UICorner") rootCorner.Parent = root
-
--- UI Scaling
-local _scalableGuis = {}
-local _lastViewport = Vector2.new(0,0)
-local _refW, _refH = 1366, 768
-
-local uiScaleRoot = Instance.new("UIScale")
-uiScaleRoot.Name = "Tempt_UIScaleRoot"
-uiScaleRoot.Parent = gui
-uiScaleRoot.Scale = 1
-
-local function computeScale()
-    local vs = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(_refW, _refH)
-    local scale = math.min(1, math.min(vs.X / _refW, vs.Y / _refH))
-    return scale, vs
-end
-
-local function applyScaleToGui(sg, s)
-    if not sg or not sg.Parent then return end
-    local us = sg:FindFirstChild("Tempt_UIScale")
-    if not us then
-        us = Instance.new("UIScale")
-        us.Name = "Tempt_UIScale"
-        us.Parent = sg
-    end
-    us.Scale = s
-end
-
-local function RegisterScalableGui(screenGui)
-    if not screenGui then return end
-    _scalableGuis[screenGui] = true
-    applyScaleToGui(screenGui, uiScaleRoot.Scale)
-end
-
-RunService.RenderStepped:Connect(function()
-    local scale, vs = computeScale()
-    if vs.X == _lastViewport.X and vs.Y == _lastViewport.Y then return end
-    _lastViewport = vs
-    uiScaleRoot.Scale = scale
-    for sg,_ in pairs(_scalableGuis) do
-        applyScaleToGui(sg, scale)
-    end
-end)
-
 
 local tabsBar = Instance.new("Frame")
 tabsBar.Size = UDim2.new(1,0,0,40)
@@ -1784,27 +1688,6 @@ BindToggleToConfig(showPowerLevelToggle, "game.showPowerLevel", false)
 BindToggleToConfig(showObjectFinderToggle, "game.showObjectFinder", false)
 BindToggleToConfig(bypassSafeHouseDoorToggle, "game.bypassSafeHouseDoor", false)
 BindToggleToConfig(gameTimerToggle, "game.gameTimer", false)
-
--- ** Home Tab Parts ** --
-
-local welcomeLabel = makeLabel(homeTab.LeftCol, 
-[[
-Hii! Welcome to my script :> First of all, I hope you'll have fun using this, and it will work  
-If some things don't work — which I hope they will, because I spent a lottt of work on this script :> 
-join my Discord server to hang out or get support!!  
-https://discord.gg/AuQgkpWkdP
-]], {
-    textColor = Color3.fromRGB(255, 182, 193),
-    textSize = 16,
-    height = 80,
-    wrap = true,
-    textX = Enum.TextXAlignment.Left,
-    textY = Enum.TextYAlignment.Top
-})
-
-
-local joinServerButton = makeButton (homeTab.LeftCol, "Copy Invite Link")
-
 
 
 --------------------------------------------------------------------------
@@ -2452,14 +2335,12 @@ end
         screenGui.Name = "RakeMeterGUI"
         screenGui.IgnoreGuiInset = true
         screenGui.ResetOnSpawn = false
-        RegisterScalableGui(screenGui)
 
         local root = Instance.new("Frame")
         root.Name = "RakeMeterPanel"
         root.Size = UDim2.new(0, 200, 0, 88)
-        -- center vertically on right side (offsets chosen to stack with other panels)
-        root.AnchorPoint = Vector2.new(1, 0.5)
-        root.Position = UDim2.new(1, -12, 0.5, -92)
+        root.Position = UDim2.new(1, -12, 0, 12)
+        root.AnchorPoint = Vector2.new(1, 0)
         root.BackgroundColor3 = COLORS.panel
         root.BorderSizePixel = 0
         root.Parent = screenGui
@@ -3840,14 +3721,12 @@ end
          screenGui.Name = "PowerLevelGUI"
          screenGui.IgnoreGuiInset = true
          screenGui.ResetOnSpawn = false
-        RegisterScalableGui(screenGui)
  
          panel = Instance.new("Frame")
          panel.Name = "PowerPanel"
          panel.Size = UDim2.new(0, 220, 0, 84)
-         -- stack under rake meter, centered vertically on right side
-         panel.AnchorPoint = Vector2.new(1, 0.5)
-         panel.Position = UDim2.new(1, -12, 0.5, 2)
+         panel.Position = UDim2.new(1, -12, 0, 120)
+         panel.AnchorPoint = Vector2.new(1, 0)
          panel.BackgroundColor3 = COLORS.panel
          panel.BorderSizePixel = 0
          panel.Parent = screenGui
@@ -5517,14 +5396,12 @@ do
         screen.Name = "Tempt_GameTimer"
         screen.ResetOnSpawn = false
         screen.Parent = playerGui or game:GetService("CoreGui")
-        RegisterScalableGui(screen)
         pcall(function() screen.DisplayOrder = 900 end)
 
         local root = Instance.new("Frame")
         root.Size = UDim2.new(0, 220, 0, 84)
-        -- stack under the other two panels; anchor to right middle and offset down
-        root.AnchorPoint = Vector2.new(1, 0.5)
-        root.Position = UDim2.new(1, -12, 0.5, 94)
+        root.Position = UDim2.new(1, -240, 0, 140) -- ** Below rake meter?
+        root.AnchorPoint = Vector2.new(0,0)
         root.BackgroundColor3 = COLORS.panel
         root.Parent = screen
         local corner = Instance.new("UICorner") corner.CornerRadius = UDim.new(0,6) corner.Parent = root
@@ -5735,26 +5612,6 @@ end
 
 
 -- ** Animate GUI Logic Ends Here ** --
-
-
--- ** Copy Invite Link Logic Starts here ** --
-
-ButtonAPI[joinServerButton].OnClick = function()
-    local inviteLink = "https://discord.gg/AuQgkpWkdP"
-    
-    -- copy to clipboard
-    if setclipboard then
-        pcall(setclipboard, inviteLink)
-    else
-        warn("Clipboard copy not supported in this environment.")
-    end
-
-    if NOTIFICATIONS_ENABLED ~= false then
-        makeNotification("Invite link copied!", 3)
-    end
-end
-
--- ** Copy Invite Link Logic Ends here -- **
 
 
 -- ────────────────────────────────────────────────────────────────────
