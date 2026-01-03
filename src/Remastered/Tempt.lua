@@ -1428,14 +1428,13 @@ tabsBar.Position = UDim2.new(0,0,0,0)
 tabsBar.BackgroundTransparency = 1
 tabsBar.Parent = root
 
------------- Break for Dragable ------------
+------------ Break for Dragable (TOP) ------------
 tabsBar.Active = true
 do
     local dragging = false
     local dragStart, startPos
     tabsBar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            -- ** dragable
             local overGui = false
             pcall(function()
                 local objs = UserInputService:GetGuiObjectsAtPosition(input.Position.X, input.Position.Y)
@@ -1458,13 +1457,13 @@ do
     UserInputService.InputChanged:Connect(function(input)
         if dragging and input.UserInputType == Enum.UserInputType.MouseMovement and dragStart and startPos then
             local delta = input.Position - dragStart
-            root.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            root.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
+                                      startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end)
 end
 
 ------------ Continue ------------
-
 local pages = Instance.new("Frame")
 pages.Size = UDim2.new(1,0,1,-40)
 pages.Position = UDim2.new(0,0,0,40)
@@ -1473,13 +1472,49 @@ pages.Parent = root
 
 local tabsUnderlay = Instance.new("Frame")
 tabsUnderlay.Name = "TabsUnderlay"
-tabsUnderlay.Size = UDim2.new(1, -16, 0, 10)
-tabsUnderlay.Position = UDim2.new(0, 8, 0, 40)
+tabsUnderlay.Size = UDim2.new(1, -16, 0, 40) 
+tabsUnderlay.Position = UDim2.new(0, 8, 1, -50) 
 tabsUnderlay.BackgroundColor3 = COLORS.panel
 tabsUnderlay.Parent = root
 local tabsUnderCorner = Instance.new("UICorner") tabsUnderCorner.CornerRadius = UDim.new(0,4) tabsUnderCorner.Parent = tabsUnderlay
 tabsUnderlay.ZIndex = 1
 tabsBar.ZIndex = 2
+
+------------ Break for Dragable (BOTTOM) ------------
+tabsUnderlay.Active = true
+do
+    local dragging = false
+    local dragStart, startPos
+    tabsUnderlay.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            local overGui = false
+            pcall(function()
+                local objs = UserInputService:GetGuiObjectsAtPosition(input.Position.X, input.Position.Y)
+                for _, o in ipairs(objs or {}) do
+                    if o and (o:IsA("TextButton") or o:IsA("ImageButton") or o:IsA("TextBox")) then
+                        overGui = true
+                        break
+                    end
+                end
+            end)
+            if overGui then return end
+            dragging = true
+            dragStart = input.Position
+            startPos = root.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement and dragStart and startPos then
+            local delta = input.Position - dragStart
+            root.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
+                                      startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
 
 
 ---------------------------------------------------------------------------
