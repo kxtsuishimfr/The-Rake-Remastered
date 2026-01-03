@@ -1234,8 +1234,119 @@ local function makeLabel(parentCol, text, opts)
     return lbl
 end
 
+--------------------------------------------------------------------------
+
+-- ** makeInput
 
 
+local function makeInput(parent, placeholderText)
+    local frame = Instance.new("Frame")
+    frame.Name = tostring(placeholderText or "Input")
+    frame.Size = UDim2.new(1, 0, 0, 44)
+    frame.BackgroundTransparency = 1
+    frame.ClipsDescendants = true
+    frame.Parent = parent
+
+    local inner = Instance.new("Frame")
+    inner.Size = UDim2.new(1, -12, 1, -8)
+    inner.Position = UDim2.new(0, 6, 0, 6)
+    inner.BackgroundTransparency = 1
+    inner.Parent = frame
+
+    local rightScale = 0.24
+    local boxHolder = Instance.new("Frame")
+    boxHolder.Size = UDim2.new(1 - rightScale, -8, 1, 0)
+    boxHolder.Position = UDim2.new(0, 0, 0, 0)
+    boxHolder.BackgroundTransparency = 1
+    boxHolder.Parent = inner
+
+    local inputBg = Instance.new("Frame")
+    inputBg.Size = UDim2.new(1, 0, 1, 0)
+    inputBg.Position = UDim2.new(0, 0, 0, 0)
+    inputBg.BackgroundColor3 = COLORS.panelAlt
+    inputBg.Parent = boxHolder
+    local bgCorner = Instance.new("UICorner") bgCorner.CornerRadius = UDim.new(0,8) bgCorner.Parent = inputBg
+
+    local inputPad = Instance.new("Frame")
+    inputPad.Size = UDim2.new(1, -8, 1, -8)
+    inputPad.Position = UDim2.new(0, 4, 0, 4)
+    inputPad.BackgroundTransparency = 1
+    inputPad.Parent = inputBg
+
+    local input = Instance.new("TextBox")
+    input.Size = UDim2.new(1, 0, 1, 0)
+    input.Position = UDim2.new(0, 0, 0, 0)
+    input.BackgroundColor3 = COLORS.panel
+    input.TextColor3 = COLORS.text
+    input.PlaceholderText = tostring(placeholderText or "Type here...")
+    input.PlaceholderColor3 = COLORS.textDim
+    input.Font = Enum.Font.Gotham
+    input.TextSize = 16
+    input.ClearTextOnFocus = false
+    input.Text = ""
+    input.TextXAlignment = Enum.TextXAlignment.Left
+    input.Parent = inputPad
+    local inputCorner = Instance.new("UICorner") inputCorner.CornerRadius = UDim.new(0,6) inputCorner.Parent = input
+
+    local rightHolder = Instance.new("Frame")
+    rightHolder.Size = UDim2.new(rightScale, 0, 1, 0)
+    rightHolder.Position = UDim2.new(1 - rightScale, -8, 0, 0)
+    rightHolder.BackgroundTransparency = 1
+    rightHolder.Parent = inner
+
+    local sendCtrl = makeButton(rightHolder, "")
+    sendCtrl.Size = UDim2.new(1, 0, 1, 0)
+    sendCtrl.BackgroundTransparency = 1
+    local labelChild = sendCtrl:FindFirstChildWhichIsA("TextLabel")
+    if labelChild then labelChild.Visible = false end
+    local sendBtn = sendCtrl:FindFirstChildWhichIsA("TextButton")
+    if sendBtn then
+        sendBtn.Text = "Send"
+        sendBtn.AnchorPoint = Vector2.new(0.5, 0.5)
+        sendBtn.Position = UDim2.new(0.5, 0, 0.5, 0)
+        sendBtn.Size = UDim2.new(1, -12, 0, 28)
+        sendBtn.BackgroundColor3 = COLORS.accent
+        sendBtn.TextColor3 = COLORS.white
+        sendBtn.Font = Enum.Font.Gotham
+        sendBtn.TextSize = 14
+        local sbCorner = sendBtn:FindFirstChildWhichIsA("UICorner")
+        if sbCorner then sbCorner.CornerRadius = UDim.new(0,6) end
+    end
+
+    if type(ButtonAPI) ~= "table" then ButtonAPI = setmetatable({}, { __mode = "k" }) end
+
+    local api = {
+        OnSend = nil,
+        Set = function(val) if input and type(val) == "string" then input.Text = val end end,
+        Get = function() return input and tostring(input.Text) or "" end,
+    }
+    if type(InputAPI) ~= "table" then InputAPI = setmetatable({}, { __mode = "k" }) end
+    InputAPI[frame] = api
+
+    local function doSend()
+        local txt = tostring(input.Text or "")
+        if type(api.OnSend) == "function" then pcall(api.OnSend, txt) end
+        input.Text = ""
+    end
+
+    if sendBtn then
+        sendBtn.MouseButton1Click:Connect(doSend)
+    end
+
+    input.FocusLost:Connect(function(enter)
+        if enter then doSend() end
+    end)
+
+    local maxOrder = 0
+    for _,c in ipairs(parent:GetChildren()) do
+        if c ~= frame and (c:IsA("Frame") or c:IsA("TextLabel") or c:IsA("TextButton")) then
+            maxOrder = math.max(maxOrder, c.LayoutOrder or 0)
+        end
+    end
+    frame.LayoutOrder = maxOrder + 1
+
+    return frame, api
+end
 --------------------------------------------------------------------------
 
 -- ** Config Stuff
@@ -1624,6 +1735,8 @@ BindToggleToConfig(animateGUIOnOpenCloseToggle, "settings.animateGUIOnOpenClose"
 BindToggleToConfig(warnIfUnsupportedGameToggle, "settings.warnIfUnsupportedGame", true)
 
 
+
+
 -------------------- Break for Close/Open --------------------
 
 do
@@ -1771,6 +1884,7 @@ https://github.com/kxtsuishimfr/The-Rake-Remastered/issues/new
 })
 
 local gitHubButton = makeButton (homeTab.LeftCol, "Copy Repo Link")
+local feedbackInput, feedbackInputApi = makeInput(homeTab.RightCol, "Give us feedback")
 
 
 --------------------------------------------------------------------------
@@ -5812,7 +5926,129 @@ end
 
 -- ** Copy GitHub Link Logic Ends Here ** --
 
+--------------------------------------------------------------------------
 
+-- ** Send Feedback Logic Starts Here ** --
+do
+    local SEND_URL = "https://tempt.vercel.app/api/server"
+
+    local function trim(s)
+        if type(s) ~= "string" then return "" end
+        return s:match("^%s*(.-)%s*$") or ""
+    end
+
+    local function findSendButton(container)
+        if not container then return nil end
+        for _,d in ipairs(container:GetDescendants()) do
+            if d and d:IsA("TextButton") and (d.Text == "Send" or d.Name:lower():find("send")) then
+                return d
+            end
+        end
+        return nil
+    end
+
+    local function postFeedback(message)
+        local payload = nil
+        pcall(function()
+            payload = HttpService:JSONEncode({ message = message })
+        end)
+        if not payload then return false, "failed to encode payload" end
+
+        -- Try syn.request if available
+        if type(syn) == "table" and type(syn.request) == "function" then
+            local ok, res = pcall(function()
+                return syn.request({ Url = SEND_URL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = payload })
+            end)
+            if ok and type(res) == "table" then
+                if res.Success == true or res.Status == 200 or res.Body then
+                    return true, res.Body or ""
+                end
+                return false, tostring(res.Body or res.StatusMessage or res.Status or "syn.request failed")
+            end
+        end
+
+        -- Try globals: request / http.request / http_request
+        if type(request) == "function" then
+            local ok, res = pcall(function()
+                return request({ Url = SEND_URL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = payload })
+            end)
+            if ok and type(res) == "table" then return true, res.Body or "" end
+        end
+        if type(http) == "table" and type(http.request) == "function" then
+            local ok, res = pcall(function()
+                return http.request({ Url = SEND_URL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = payload })
+            end)
+            if ok and type(res) == "table" then return true, res.Body or "" end
+        end
+        if type(http_request) == "function" then
+            local ok, res = pcall(function()
+                return http_request({ Url = SEND_URL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = payload })
+            end)
+            if ok and type(res) == "table" then return true, res.Body or "" end
+        end
+
+        -- Try HttpService.RequestAsync / PostAsync
+        if HttpService then
+            if type(HttpService.RequestAsync) == "function" then
+                local ok, res = pcall(function()
+                    return HttpService:RequestAsync({ Url = SEND_URL, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = payload })
+                end)
+                if ok and type(res) == "table" then
+                    if res.Success == true or res.Status == 200 then return true, res.Body or "" end
+                    return false, tostring(res.StatusMessage or res.Body or "RequestAsync failed")
+                end
+            end
+            if type(HttpService.PostAsync) == "function" then
+                local ok, res = pcall(function()
+                    return HttpService:PostAsync(SEND_URL, payload, Enum.HttpContentType.ApplicationJson)
+                end)
+                if ok then return true, res end
+            end
+        end
+
+        return false, "no available http method (blocked or unsupported)"
+    end
+
+    pcall(function()
+        if feedbackInputApi and type(feedbackInputApi) == "table" then
+            local prev = feedbackInputApi.OnSend
+            feedbackInputApi.OnSend = function(txt)
+                if prev then pcall(prev, txt) end
+                local s = trim(tostring(txt or ""))
+                if s == "" or #s < 5 then
+                    pcall(function() if NOTIFICATIONS_ENABLED then makeNotification("Feedback must be at least 5 characters.", 3) end end)
+                    return
+                end
+
+                local sendBtn = findSendButton(feedbackInput)
+                if sendBtn then
+                    pcall(function() sendBtn.Text = "Sending..." end)
+                    pcall(function() sendBtn.Active = false sendBtn.AutoButtonColor = false end)
+                end
+
+                local ok, res = postFeedback(s)
+
+                if sendBtn then
+                    pcall(function() sendBtn.Text = "Send" end)
+                    pcall(function() sendBtn.Active = true sendBtn.AutoButtonColor = true end)
+                end
+
+                if ok then
+                    pcall(function() if NOTIFICATIONS_ENABLED then makeNotification("Feedback sent, thanks!", 4) end end)
+                else
+                    local errMsg = tostring(res or "network error")
+                    pcall(function() print("Failed to send feedback: " .. errMsg) end)
+                end
+            end
+        end
+    end)
+end
+
+
+-- ** Send Feedback Logic Ends Here ** --
+
+
+-- ** Home Tab Parts Ends Here ** --
 
 
 -- ────────────────────────────────────────────────────────────────────
