@@ -1755,8 +1755,22 @@ https://discord.gg/AuQgkpWkdP
     textY = Enum.TextYAlignment.Top
 })
 
-
 local joinServerButton = makeButton (homeTab.LeftCol, "Copy Invite Link")
+
+local issueLabel = makeLabel(homeTab.LeftCol, 
+[[
+Have a problem? Go at this repo and open an issue:
+https://github.com/kxtsuishimfr/The-Rake-Remastered/issues/new
+]], {
+    textColor = Color3.fromRGB(255, 255, 255),
+    textSize = 16,
+    height = 80,
+    wrap = true,
+    textX = Enum.TextXAlignment.Left,
+    textY = Enum.TextYAlignment.Top
+})
+
+local gitHubButton = makeButton (homeTab.LeftCol, "Copy Repo Link")
 
 
 --------------------------------------------------------------------------
@@ -5681,6 +5695,124 @@ end
 
 
 -- ** Animate GUI Logic Ends Here ** --
+
+--------------------------------------------------------------------------
+
+-- ** Home Tab Parts Starts Here ** --
+
+-- Copy Invite Link Logic Starts Here --
+
+do
+    local INVITE_LINK = "https://discord.gg/AuQgkpWkdP"
+
+    local function tryCopy(text)
+        local ok = false
+        pcall(function()
+            if type(setclipboard) == "function" then setclipboard(text); ok = true; return end
+            if type(set_clipboard) == "function" then set_clipboard(text); ok = true; return end
+            if type(write_clipboard) == "function" then write_clipboard(text); ok = true; return end
+            if type(syn) == "table" and type(syn.set_clipboard) == "function" then syn.set_clipboard(text); ok = true; return end
+            if type(Clipboard) == "table" and type(Clipboard.Set) == "function" then Clipboard.Set(text); ok = true; return end
+        end)
+        return ok
+    end
+
+    local function notifyCopied()
+        pcall(function()
+            if NOTIFICATIONS_ENABLED then
+                makeNotification("Invite link was copied to your clipboard.", 3)
+            end
+        end)
+    end
+
+    pcall(function()
+        local api = (type(ButtonAPI) == "table") and ButtonAPI[joinServerButton]
+        if api and type(api.OnClick) == "function" then
+            local prev = api.OnClick
+            api.OnClick = function()
+                pcall(prev)
+                tryCopy(INVITE_LINK)
+                notifyCopied()
+            end
+        elseif api then
+            api.OnClick = function()
+                tryCopy(INVITE_LINK)
+                notifyCopied()
+            end
+        else
+            pcall(function()
+                local tb = joinServerButton and joinServerButton:FindFirstChildOfClass("TextButton")
+                if tb and tb.MouseButton1Click then
+                    tb.MouseButton1Click:Connect(function()
+                        tryCopy(INVITE_LINK)
+                        notifyCopied()
+                    end)
+                end
+            end)
+        end
+    end)
+end
+
+-- Copy Invite Link Logic Ends Here --
+
+--------------------------------------------------------------------------
+
+
+-- ** Copy GitHub Link Logic Starts Here ** --
+do
+    local REPO_LINK = "https://github.com/kxtsuishimfr/The-Rake-Remastered/issues/new"
+
+    local function tryCopy(text)
+        local ok = false
+        pcall(function()
+            if type(setclipboard) == "function" then setclipboard(text); ok = true; return end
+            if type(set_clipboard) == "function" then set_clipboard(text); ok = true; return end
+            if type(write_clipboard) == "function" then write_clipboard(text); ok = true; return end
+            if type(syn) == "table" and type(syn.set_clipboard) == "function" then syn.set_clipboard(text); ok = true; return end
+            if type(Clipboard) == "table" and type(Clipboard.Set) == "function" then Clipboard.Set(text); ok = true; return end
+        end)
+        return ok
+    end
+
+    local function notifyCopied()
+        pcall(function()
+            if NOTIFICATIONS_ENABLED then
+                makeNotification("Repo link was copied to your clipboard.", 3)
+            end
+        end)
+    end
+
+    pcall(function()
+        local api = (type(ButtonAPI) == "table") and ButtonAPI[gitHubButton]
+        if api and type(api.OnClick) == "function" then
+            local prev = api.OnClick
+            api.OnClick = function()
+                pcall(prev)
+                tryCopy(REPO_LINK)
+                notifyCopied()
+            end
+        elseif api then
+            api.OnClick = function()
+                tryCopy(REPO_LINK)
+                notifyCopied()
+            end
+        else
+            pcall(function()
+                local tb = gitHubButton and gitHubButton:FindFirstChildOfClass("TextButton")
+                if tb and tb.MouseButton1Click then
+                    tb.MouseButton1Click:Connect(function()
+                        tryCopy(REPO_LINK)
+                        notifyCopied()
+                    end)
+                end
+            end)
+        end
+    end)
+end
+
+-- ** Copy GitHub Link Logic Ends Here ** --
+
+
 
 
 -- ────────────────────────────────────────────────────────────────────
